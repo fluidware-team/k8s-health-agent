@@ -1,9 +1,10 @@
 import * as dotenv from 'dotenv';
 import { getLogger } from '@fluidware-it/saddlebag';
-import { getDiagnosticGraph, stateToCheckpointData, checkpointDataToState, resetDiagnosticGraph } from './agents/diagnosticGraph';
+import { getDiagnosticGraph, stateToCheckpointData, resetDiagnosticGraph } from './agents/diagnosticGraph';
 import { parseArgs } from './cli/parser';
 import { getDefaultCheckpointer } from './persistence/fileCheckpointer';
 import { getContextManager, listContexts, getCurrentContext, switchContext } from './cluster/contextManager';
+import { runChatMode } from './cli/chatMode';
 
 dotenv.config();
 
@@ -30,6 +31,17 @@ async function main() {
 
   // Initialize context manager (validates K8s connection)
   const contextManager = getContextManager(args.context);
+
+  // Chat mode
+  if (args.chat) {
+    logger.info('Entering chat mode...');
+    await runChatMode({
+      namespace: args.namespace,
+      context: args.context,
+      modelSpec: args.model,
+    });
+    return;
+  }
 
   // Generate thread ID for this diagnostic session
   const threadId = `${args.namespace}-${Date.now()}`;

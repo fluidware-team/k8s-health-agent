@@ -2,6 +2,8 @@ export interface CliArgs {
   namespace: string;
   context?: string | undefined;
   resume: boolean;
+  chat: boolean;
+  model?: string | undefined;
 }
 
 export function parseArgs(args: string[]): CliArgs {
@@ -9,6 +11,8 @@ export function parseArgs(args: string[]): CliArgs {
     namespace: 'default',
     context: undefined,
     resume: false,
+    chat: false,
+    model: undefined,
   };
 
   const positionalArgs: string[] = [];
@@ -34,6 +38,27 @@ export function parseArgs(args: string[]): CliArgs {
     // Handle --resume or -r
     if (arg === '--resume' || arg === '-r') {
       result.resume = true;
+      i++;
+      continue;
+    }
+
+    // Handle --chat
+    if (arg === '--chat') {
+      result.chat = true;
+      i++;
+      continue;
+    }
+
+    // Handle --model or -m
+    if (arg === '--model' || arg === '-m') {
+      result.model = args[i + 1];
+      i += 2;
+      continue;
+    }
+
+    // Handle --model=value
+    if (arg?.startsWith('--model=')) {
+      result.model = arg.split('=')[1];
       i++;
       continue;
     }

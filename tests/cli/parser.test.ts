@@ -9,6 +9,8 @@ describe('CLI Parser', () => {
       expect(args.namespace).toBe('default');
       expect(args.context).toBeUndefined();
       expect(args.resume).toBe(false);
+      expect(args.chat).toBe(false);
+      expect(args.model).toBeUndefined();
     });
 
     it('should parse namespace as first positional argument', () => {
@@ -60,6 +62,40 @@ describe('CLI Parser', () => {
       const args = parseArgs(['--context=prod']);
 
       expect(args.context).toBe('prod');
+    });
+
+    it('should parse --chat flag', () => {
+      const args = parseArgs(['--chat']);
+
+      expect(args.chat).toBe(true);
+    });
+
+    it('should parse --model flag', () => {
+      const args = parseArgs(['--model', 'gpt-4']);
+
+      expect(args.model).toBe('gpt-4');
+    });
+
+    it('should parse -m shorthand for model', () => {
+      const args = parseArgs(['-m', 'ollama/llama2']);
+
+      expect(args.model).toBe('ollama/llama2');
+    });
+
+    it('should handle = syntax for model', () => {
+      const args = parseArgs(['--model=gpt-3.5-turbo']);
+
+      expect(args.model).toBe('gpt-3.5-turbo');
+    });
+
+    it('should parse all flags together', () => {
+      const args = parseArgs(['monitoring', '--context', 'prod', '--chat', '--model', 'gpt-4', '--resume']);
+
+      expect(args.namespace).toBe('monitoring');
+      expect(args.context).toBe('prod');
+      expect(args.chat).toBe(true);
+      expect(args.model).toBe('gpt-4');
+      expect(args.resume).toBe(true);
     });
   });
 });
