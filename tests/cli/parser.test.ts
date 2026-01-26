@@ -1,0 +1,65 @@
+import { describe, it, expect } from 'vitest';
+import { parseArgs, type CliArgs } from '../../src/cli/parser';
+
+describe('CLI Parser', () => {
+  describe('parseArgs', () => {
+    it('should return default values when no arguments provided', () => {
+      const args = parseArgs([]);
+
+      expect(args.namespace).toBe('default');
+      expect(args.context).toBeUndefined();
+      expect(args.resume).toBe(false);
+    });
+
+    it('should parse namespace as first positional argument', () => {
+      const args = parseArgs(['kube-system']);
+
+      expect(args.namespace).toBe('kube-system');
+    });
+
+    it('should parse --context flag', () => {
+      const args = parseArgs(['--context', 'prod-cluster']);
+
+      expect(args.context).toBe('prod-cluster');
+    });
+
+    it('should parse -c shorthand for context', () => {
+      const args = parseArgs(['-c', 'staging-cluster']);
+
+      expect(args.context).toBe('staging-cluster');
+    });
+
+    it('should parse --resume flag', () => {
+      const args = parseArgs(['--resume']);
+
+      expect(args.resume).toBe(true);
+    });
+
+    it('should parse -r shorthand for resume', () => {
+      const args = parseArgs(['-r']);
+
+      expect(args.resume).toBe(true);
+    });
+
+    it('should parse combined arguments', () => {
+      const args = parseArgs(['monitoring', '--context', 'dev-cluster', '--resume']);
+
+      expect(args.namespace).toBe('monitoring');
+      expect(args.context).toBe('dev-cluster');
+      expect(args.resume).toBe(true);
+    });
+
+    it('should parse namespace after flags', () => {
+      const args = parseArgs(['--context', 'my-cluster', 'my-namespace']);
+
+      expect(args.namespace).toBe('my-namespace');
+      expect(args.context).toBe('my-cluster');
+    });
+
+    it('should handle = syntax for context', () => {
+      const args = parseArgs(['--context=prod']);
+
+      expect(args.context).toBe('prod');
+    });
+  });
+});
