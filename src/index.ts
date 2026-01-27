@@ -1,7 +1,8 @@
 import * as dotenv from 'dotenv';
-import { getAgent } from './agents/k8sAgent';
+import { getAgent, getSystemMessage } from './agents/k8sAgent';
 import { HumanMessage } from '@langchain/core/messages';
 import { getLogger } from '@fluidware-it/saddlebag';
+import { buildUserPrompt } from './prompts/systemPrompt';
 
 dotenv.config();
 
@@ -14,13 +15,7 @@ async function main() {
   logger.info(`--- Namespace Analysis: ${namespace} ---`);
 
   const input = {
-    messages: [
-      new HumanMessage(`Check the status of the namespace "${namespace}".
-      Tell me if there are pods with errors, abnormal restarts or other issues.
-      If there are, tell me what they are and eventually how to fix them.
-      For the worst issue, analyze logs (eventually the previous instance) to understand what caused it
-      Also take a look at the node status to see if the cluster is healthy.`)
-    ]
+    messages: [getSystemMessage(), new HumanMessage(buildUserPrompt(namespace))]
   };
 
   const result = await getAgent().invoke(input);
