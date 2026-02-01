@@ -1,9 +1,4 @@
-import {
-  IssueSeverity,
-  DiagnosticIssue,
-  DiagnosticReport,
-  HealthyResource,
-} from '../types/report';
+import { IssueSeverity, DiagnosticIssue, DiagnosticReport, HealthyResource } from '../types/report';
 
 // Re-export types for convenience
 export { IssueSeverity } from '../types/report';

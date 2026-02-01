@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock the k8sClient module
 vi.mock('../../src/cluster/k8sClient', () => ({
   k8sCoreApi: {
-    listNamespacedEvent: vi.fn(),
-  },
+    listNamespacedEvent: vi.fn()
+  }
 }));
 
 import { listEventsTool } from '../../src/tools/k8sTools';
@@ -25,7 +25,7 @@ describe('listEventsTool', () => {
           message: 'Container killed due to OOM',
           type: 'Warning',
           count: 3,
-          lastTimestamp: '2024-01-01T00:00:00Z',
+          lastTimestamp: '2024-01-01T00:00:00Z'
         },
         {
           metadata: { name: 'event-2', namespace: 'default' },
@@ -33,7 +33,7 @@ describe('listEventsTool', () => {
           reason: 'Pulled',
           message: 'Image pulled successfully',
           type: 'Normal',
-          count: 1,
+          count: 1
         },
         {
           metadata: { name: 'event-3', namespace: 'default' },
@@ -41,9 +41,9 @@ describe('listEventsTool', () => {
           reason: 'FailedMount',
           message: 'MountVolume.SetUp failed for volume "secret-vol"',
           type: 'Warning',
-          count: 5,
-        },
-      ],
+          count: 5
+        }
+      ]
     };
 
     vi.mocked(k8sCoreApi.listNamespacedEvent).mockResolvedValue(mockEvents as any);
@@ -65,16 +65,16 @@ describe('listEventsTool', () => {
           involvedObject: { kind: 'Pod', name: 'my-pod' },
           reason: 'OOMKilled',
           message: 'OOM killed',
-          type: 'Warning',
+          type: 'Warning'
         },
         {
           metadata: { name: 'event-2' },
           involvedObject: { kind: 'Pod', name: 'my-pod' },
           reason: 'Pulled',
           message: 'Image pulled',
-          type: 'Normal',
-        },
-      ],
+          type: 'Normal'
+        }
+      ]
     };
 
     vi.mocked(k8sCoreApi.listNamespacedEvent).mockResolvedValue(mockEvents as any);
@@ -93,16 +93,16 @@ describe('listEventsTool', () => {
           involvedObject: { kind: 'Pod', name: 'target-pod' },
           reason: 'BackOff',
           message: 'Back-off restarting',
-          type: 'Warning',
+          type: 'Warning'
         },
         {
           metadata: { name: 'event-2' },
           involvedObject: { kind: 'Pod', name: 'other-pod' },
           reason: 'FailedMount',
           message: 'Mount failed',
-          type: 'Warning',
-        },
-      ],
+          type: 'Warning'
+        }
+      ]
     };
 
     vi.mocked(k8sCoreApi.listNamespacedEvent).mockResolvedValue(mockEvents as any);
@@ -130,30 +130,30 @@ describe('listEventsTool', () => {
           involvedObject: { kind: 'Pod', name: 'pod-1' },
           reason: 'OOMKilled',
           message: 'Container killed',
-          type: 'Warning',
+          type: 'Warning'
         },
         {
           metadata: { name: 'event-2' },
           involvedObject: { kind: 'Pod', name: 'pod-2' },
           reason: 'FailedMount',
           message: 'Secret not found',
-          type: 'Warning',
+          type: 'Warning'
         },
         {
           metadata: { name: 'event-3' },
           involvedObject: { kind: 'Pod', name: 'pod-3' },
           reason: 'BackOff',
           message: 'Back-off restarting failed container',
-          type: 'Warning',
+          type: 'Warning'
         },
         {
           metadata: { name: 'event-4' },
           involvedObject: { kind: 'Pod', name: 'pod-4' },
           reason: 'FailedScheduling',
           message: 'Insufficient cpu',
-          type: 'Warning',
-        },
-      ],
+          type: 'Warning'
+        }
+      ]
     };
 
     vi.mocked(k8sCoreApi.listNamespacedEvent).mockResolvedValue(mockEvents as any);

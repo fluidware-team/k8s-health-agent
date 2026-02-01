@@ -13,7 +13,7 @@ describe('k8sDataFilter', () => {
           creationTimestamp: '2024-01-01T00:00:00Z',
           managedFields: [{ manager: 'kubectl', operation: 'Update' }],
           labels: { app: 'my-app', 'pod-template-hash': 'abc123' },
-          annotations: { 'kubectl.kubernetes.io/last-applied-configuration': '...' },
+          annotations: { 'kubectl.kubernetes.io/last-applied-configuration': '...' }
         },
         spec: {
           containers: [
@@ -22,27 +22,27 @@ describe('k8sDataFilter', () => {
               image: 'nginx:latest',
               resources: {
                 requests: { cpu: '100m', memory: '128Mi' },
-                limits: { cpu: '500m', memory: '512Mi' },
-              },
-            },
+                limits: { cpu: '500m', memory: '512Mi' }
+              }
+            }
           ],
-          nodeName: 'node-1',
+          nodeName: 'node-1'
         },
         status: {
           phase: 'Running',
           conditions: [
             { type: 'Ready', status: 'True' },
-            { type: 'Initialized', status: 'True' },
+            { type: 'Initialized', status: 'True' }
           ],
           containerStatuses: [
             {
               name: 'main',
               ready: true,
               restartCount: 5,
-              state: { running: { startedAt: '2024-01-01T00:00:00Z' } },
-            },
-          ],
-        },
+              state: { running: { startedAt: '2024-01-01T00:00:00Z' } }
+            }
+          ]
+        }
       };
 
       const filtered = filterPodData(rawPod);
@@ -69,7 +69,7 @@ describe('k8sDataFilter', () => {
         metadata: { name: 'crash-pod', namespace: 'default' },
         spec: {
           containers: [{ name: 'main', image: 'broken:v1' }],
-          nodeName: 'node-1',
+          nodeName: 'node-1'
         },
         status: {
           phase: 'Running',
@@ -81,12 +81,12 @@ describe('k8sDataFilter', () => {
               state: {
                 waiting: {
                   reason: 'CrashLoopBackOff',
-                  message: 'back-off 5m0s restarting failed container',
-                },
-              },
-            },
-          ],
-        },
+                  message: 'back-off 5m0s restarting failed container'
+                }
+              }
+            }
+          ]
+        }
       };
 
       const filtered = filterPodData(crashingPod);
@@ -100,7 +100,7 @@ describe('k8sDataFilter', () => {
       const pendingPod = {
         metadata: { name: 'pending-pod', namespace: 'default' },
         spec: {
-          containers: [{ name: 'main', image: 'nginx:latest' }],
+          containers: [{ name: 'main', image: 'nginx:latest' }]
         },
         status: {
           phase: 'Pending',
@@ -109,10 +109,10 @@ describe('k8sDataFilter', () => {
               type: 'PodScheduled',
               status: 'False',
               reason: 'Unschedulable',
-              message: 'Insufficient cpu',
-            },
-          ],
-        },
+              message: 'Insufficient cpu'
+            }
+          ]
+        }
       };
 
       const filtered = filterPodData(pendingPod);
@@ -122,7 +122,7 @@ describe('k8sDataFilter', () => {
         type: 'PodScheduled',
         status: 'False',
         reason: 'Unschedulable',
-        message: 'Insufficient cpu',
+        message: 'Insufficient cpu'
       });
     });
 
@@ -136,19 +136,19 @@ describe('k8sDataFilter', () => {
               image: 'nginx',
               resources: {
                 requests: { cpu: '100m', memory: '128Mi' },
-                limits: { cpu: '500m', memory: '512Mi' },
-              },
-            },
-          ],
+                limits: { cpu: '500m', memory: '512Mi' }
+              }
+            }
+          ]
         },
-        status: { phase: 'Running' },
+        status: { phase: 'Running' }
       };
 
       const filtered = filterPodData(podWithResources);
 
       expect(filtered.containers[0]!.resources).toEqual({
         requests: { cpu: '100m', memory: '128Mi' },
-        limits: { cpu: '500m', memory: '512Mi' },
+        limits: { cpu: '500m', memory: '512Mi' }
       });
     });
   });
@@ -163,12 +163,12 @@ describe('k8sDataFilter', () => {
           managedFields: [{ manager: 'kubelet' }],
           labels: {
             'kubernetes.io/os': 'linux',
-            'node.kubernetes.io/instance-type': 'm5.large',
-          },
+            'node.kubernetes.io/instance-type': 'm5.large'
+          }
         },
         spec: {
           podCIDR: '10.244.0.0/24',
-          taints: [{ key: 'node.kubernetes.io/unschedulable', effect: 'NoSchedule' }],
+          taints: [{ key: 'node.kubernetes.io/unschedulable', effect: 'NoSchedule' }]
         },
         status: {
           capacity: { cpu: '4', memory: '16Gi', pods: '110' },
@@ -176,9 +176,9 @@ describe('k8sDataFilter', () => {
           conditions: [
             { type: 'Ready', status: 'True', message: 'kubelet is ready' },
             { type: 'MemoryPressure', status: 'False', message: 'no memory pressure' },
-            { type: 'DiskPressure', status: 'False', message: 'no disk pressure' },
-          ],
-        },
+            { type: 'DiskPressure', status: 'False', message: 'no disk pressure' }
+          ]
+        }
       };
 
       const filtered = filterNodeData(rawNode);
@@ -202,9 +202,9 @@ describe('k8sDataFilter', () => {
           conditions: [
             { type: 'Ready', status: 'False', reason: 'KubeletNotReady' },
             { type: 'MemoryPressure', status: 'True', message: 'high memory usage' },
-            { type: 'DiskPressure', status: 'False' },
-          ],
-        },
+            { type: 'DiskPressure', status: 'False' }
+          ]
+        }
       };
 
       const filtered = filterNodeData(nodeWithIssues, { onlyUnhealthy: true });
@@ -223,19 +223,19 @@ describe('k8sDataFilter', () => {
           namespace: 'default',
           uid: 'event-uid',
           resourceVersion: '999',
-          managedFields: [],
+          managedFields: []
         },
         involvedObject: {
           kind: 'Pod',
           name: 'my-pod',
-          namespace: 'default',
+          namespace: 'default'
         },
         reason: 'OOMKilled',
         message: 'Container killed due to OOM',
         type: 'Warning',
         count: 5,
         firstTimestamp: '2024-01-01T00:00:00Z',
-        lastTimestamp: '2024-01-01T01:00:00Z',
+        lastTimestamp: '2024-01-01T01:00:00Z'
       };
 
       const filtered = filterEventData(rawEvent)!;
@@ -247,7 +247,7 @@ describe('k8sDataFilter', () => {
       expect(filtered.involvedObject).toEqual({
         kind: 'Pod',
         name: 'my-pod',
-        namespace: 'default',
+        namespace: 'default'
       });
 
       // Should not include unnecessary metadata (using 'any' cast to test that these don't exist)
@@ -262,11 +262,11 @@ describe('k8sDataFilter', () => {
         { reason: 'OOMKilled', type: 'Warning', message: 'OOM killed' },
         { reason: 'FailedMount', type: 'Warning', message: 'Mount failed' },
         { reason: 'Pulled', type: 'Normal', message: 'Image pulled' },
-        { reason: 'BackOff', type: 'Warning', message: 'Back-off restarting' },
+        { reason: 'BackOff', type: 'Warning', message: 'Back-off restarting' }
       ].map((e, i) => ({
         metadata: { name: `event-${i}` },
         involvedObject: { kind: 'Pod', name: 'test' },
-        ...e,
+        ...e
       }));
 
       const filtered = events

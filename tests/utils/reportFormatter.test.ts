@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  formatReport,
-  DiagnosticReport,
-  IssueSeverity,
-  DiagnosticIssue,
-} from '../../src/utils/reportFormatter';
+import { formatReport, DiagnosticReport, IssueSeverity } from '../../src/utils/reportFormatter';
 
 describe('reportFormatter', () => {
   describe('formatReport', () => {
@@ -19,20 +14,17 @@ describe('reportFormatter', () => {
             title: 'Pod CrashLoopBackOff',
             description: 'Pod my-app-123 is in CrashLoopBackOff with 10 restarts',
             resource: { kind: 'Pod', name: 'my-app-123', namespace: 'default' },
-            suggestedCommands: ['kubectl logs my-app-123 -n default --previous'],
+            suggestedCommands: ['kubectl logs my-app-123 -n default --previous']
           },
           {
             severity: IssueSeverity.CRITICAL,
             title: 'OOMKilled Event',
             description: 'Container was killed due to out of memory',
             resource: { kind: 'Pod', name: 'my-app-123', namespace: 'default' },
-            suggestedCommands: [
-              'kubectl describe pod my-app-123 -n default',
-              'kubectl top pod my-app-123 -n default',
-            ],
-          },
+            suggestedCommands: ['kubectl describe pod my-app-123 -n default', 'kubectl top pod my-app-123 -n default']
+          }
         ],
-        healthyResources: [],
+        healthyResources: []
       };
 
       const formatted = formatReport(report);
@@ -54,10 +46,10 @@ describe('reportFormatter', () => {
             severity: IssueSeverity.WARNING,
             title: 'High Restart Count',
             description: 'Pod api-server has 5 restarts in the last hour',
-            resource: { kind: 'Pod', name: 'api-server', namespace: 'production' },
-          },
+            resource: { kind: 'Pod', name: 'api-server', namespace: 'production' }
+          }
         ],
-        healthyResources: [],
+        healthyResources: []
       };
 
       const formatted = formatReport(report);
@@ -76,8 +68,8 @@ describe('reportFormatter', () => {
         healthyResources: [
           { kind: 'Pod', name: 'web-app', status: 'Running' },
           { kind: 'Pod', name: 'api-server', status: 'Running' },
-          { kind: 'Node', name: 'node-1', status: 'Ready' },
-        ],
+          { kind: 'Node', name: 'node-1', status: 'Ready' }
+        ]
       };
 
       const formatted = formatReport(report);
@@ -103,11 +95,11 @@ describe('reportFormatter', () => {
             resource: { kind: 'Pod', name: 'app-123' },
             suggestedCommands: [
               'kubectl get secret db-credentials -n default',
-              'kubectl describe pod app-123 -n default',
-            ],
-          },
+              'kubectl describe pod app-123 -n default'
+            ]
+          }
         ],
-        healthyResources: [],
+        healthyResources: []
       };
 
       const formatted = formatReport(report);
@@ -127,22 +119,22 @@ describe('reportFormatter', () => {
             severity: IssueSeverity.WARNING,
             title: 'Warning Issue',
             description: 'A warning',
-            resource: { kind: 'Pod', name: 'pod-1' },
+            resource: { kind: 'Pod', name: 'pod-1' }
           },
           {
             severity: IssueSeverity.CRITICAL,
             title: 'Critical Issue',
             description: 'A critical issue',
-            resource: { kind: 'Pod', name: 'pod-2' },
+            resource: { kind: 'Pod', name: 'pod-2' }
           },
           {
             severity: IssueSeverity.INFO,
             title: 'Info Message',
             description: 'Just informational',
-            resource: { kind: 'Pod', name: 'pod-3' },
-          },
+            resource: { kind: 'Pod', name: 'pod-3' }
+          }
         ],
-        healthyResources: [],
+        healthyResources: []
       };
 
       const formatted = formatReport(report);
@@ -167,10 +159,10 @@ describe('reportFormatter', () => {
             title: 'Pod Crash',
             description: 'Pod crashed',
             resource: { kind: 'Pod', name: 'app' },
-            nextSteps: ['Check application logs', 'Review resource limits', 'Check for OOM events'],
-          },
+            nextSteps: ['Check application logs', 'Review resource limits', 'Check for OOM events']
+          }
         ],
-        healthyResources: [],
+        healthyResources: []
       };
 
       const formatted = formatReport(report);

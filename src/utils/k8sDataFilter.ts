@@ -1,195 +1,168 @@
-interface FilterOptions {
-  onlyUnhealthy?: boolean;
-  onlyWarnings?: boolean;
-}
+import type {
+  FilterOptions,
+  ContainerStatus,
+  PodCondition,
+  FilteredContainer,
+  FilteredPod,
+  FilteredNode,
+  FilteredEvent
+} from '../types/k8s';
 
-interface ContainerStatus {
-  name: string;
-  ready?: boolean;
-  restartCount?: number;
-  state?: {
-    running?: { startedAt?: string };
-    waiting?: { reason?: string; message?: string };
-    terminated?: { reason?: string; exitCode?: number; message?: string };
-  };
-}
-
-interface PodCondition {
-  type: string;
-  status: string;
-  reason?: string;
-  message?: string;
-}
-
-interface FilteredContainer {
-  name: string;
-  image: string;
-  ready?: boolean | undefined;
+interface ContainerStateResult {
   state?: string;
   stateMessage?: string;
-  resources?: {
-    requests?: Record<string, string>;
-    limits?: Record<string, string>;
-  };
 }
 
-interface FilteredPod {
-  name: string;
-  namespace: string;
-  status: string;
-  nodeName?: string;
-  restarts: number;
-  containers: FilteredContainer[];
-  conditions?: PodCondition[];
+function buildStateResult(reason?: string, message?: string): ContainerStateResult {
+  const result: ContainerStateResult = {};
+  if (reason) result.state = reason;
+  if (message) result.stateMessage = message;
+  return result;
 }
 
-interface FilteredNode {
-  name: string;
-  capacity?: Record<string, string>;
-  allocatable?: Record<string, string>;
-  conditions: PodCondition[];
-  taints?: { key: string; effect: string; value?: string }[];
-}
+function extractContainerState(containerStatus: ContainerStatus): ContainerStateResult {
+  const { state } = containerStatus;
+  if (!state) return {};
 
-interface FilteredEvent {
-  reason: string;
-  message: string;
-  type: string;
-  count?: number;
-  involvedObject: {
-    kind: string;
-    name: string;
-    namespace?: string;
-  };
-  firstTimestamp?: string;
-  lastTimestamp?: string;
-}
-
-function extractContainerState(containerStatus: ContainerStatus): { state?: string; stateMessage?: string } {
-  if (containerStatus.state?.waiting) {
-    const result: { state?: string; stateMessage?: string } = {};
-    if (containerStatus.state.waiting.reason) {
-      result.state = containerStatus.state.waiting.reason;
-    }
-    if (containerStatus.state.waiting.message) {
-      result.stateMessage = containerStatus.state.waiting.message;
-    }
-    return result;
+  if (state.waiting) {
+    return buildStateResult(state.waiting.reason, state.waiting.message);
   }
-  if (containerStatus.state?.terminated) {
-    const result: { state?: string; stateMessage?: string } = {};
-    if (containerStatus.state.terminated.reason) {
-      result.state = containerStatus.state.terminated.reason;
-    }
-    if (containerStatus.state.terminated.message) {
-      result.stateMessage = containerStatus.state.terminated.message;
-    }
-    return result;
+  if (state.terminated) {
+    return buildStateResult(state.terminated.reason, state.terminated.message);
   }
-  if (containerStatus.state?.running) {
+  if (state.running) {
     return { state: 'Running' };
   }
   return {};
 }
 
-export function filterPodData(pod: any): FilteredPod {
-  const containerStatuses: ContainerStatus[] = pod.status?.containerStatuses || [];
-  const containers = (pod.spec?.containers || []).map((container: any) => {
-    const status = containerStatuses.find(s => s.name === container.name);
-    const stateInfo = status ? extractContainerState(status) : {};
+function buildContainerResources(container: any): FilteredContainer['resources'] | undefined {
+  const { resources } = container;
+  if (!resources || (!resources.requests && !resources.limits)) {
+    return undefined;
+  }
+  const result: FilteredContainer['resources'] = {};
+  if (resources.requests) result.requests = resources.requests;
+  if (resources.limits) result.limits = resources.limits;
+  return result;
+}
 
-    const filteredContainer: FilteredContainer = {
-      name: container.name,
-      image: container.image,
-      ready: status?.ready,
-      ...stateInfo,
-    };
+function mapContainer(container: any, containerStatuses: ContainerStatus[]): FilteredContainer {
+  const status = containerStatuses.find(s => s.name === container.name);
+  const stateInfo = status ? extractContainerState(status) : {};
+  const resources = buildContainerResources(container);
 
-    if (container.resources && (container.resources.requests || container.resources.limits)) {
-      filteredContainer.resources = {};
-      if (container.resources.requests) {
-        filteredContainer.resources.requests = container.resources.requests;
-      }
-      if (container.resources.limits) {
-        filteredContainer.resources.limits = container.resources.limits;
-      }
-    }
+  return {
+    name: container.name,
+    image: container.image,
+    ready: status?.ready,
+    ...stateInfo,
+    ...(resources && { resources })
+  };
+}
 
-    return filteredContainer;
-  });
+function mapCondition(c: PodCondition): PodCondition {
+  return {
+    type: c.type,
+    status: c.status,
+    ...(c.reason && { reason: c.reason }),
+    ...(c.message && { message: c.message })
+  };
+}
 
-  // Calculate total restarts across all containers
-  const restarts = containerStatuses.reduce((sum, cs) => sum + (cs.restartCount || 0), 0);
+function filterPodConditions(conditions: PodCondition[]): PodCondition[] {
+  return conditions.filter(c => c.status !== 'True' || c.type === 'Ready').map(mapCondition);
+}
 
-  // Filter conditions to only include non-True ones or important ones
-  const conditions = (pod.status?.conditions || [])
-    .filter((c: PodCondition) => c.status !== 'True' || c.type === 'Ready')
-    .map((c: PodCondition) => ({
-      type: c.type,
-      status: c.status,
-      ...(c.reason && { reason: c.reason }),
-      ...(c.message && { message: c.message }),
-    }));
+function getContainerStatuses(pod: any): ContainerStatus[] {
+  return pod.status?.containerStatuses || [];
+}
 
-  const filtered: FilteredPod = {
+function getSpecContainers(pod: any): any[] {
+  return pod.spec?.containers || [];
+}
+
+function getPodConditions(pod: any): PodCondition[] {
+  return pod.status?.conditions || [];
+}
+
+function calculateRestarts(containerStatuses: ContainerStatus[]): number {
+  return containerStatuses.reduce((sum, cs) => sum + (cs.restartCount || 0), 0);
+}
+
+function buildFilteredPod(
+  pod: any,
+  containers: FilteredContainer[],
+  restarts: number,
+  conditions: PodCondition[]
+): FilteredPod {
+  const nodeName = pod.spec?.nodeName;
+  return {
     name: pod.metadata?.name || '',
     namespace: pod.metadata?.namespace || 'default',
     status: pod.status?.phase || 'Unknown',
     restarts,
     containers,
+    ...(nodeName && { nodeName }),
+    ...(conditions.length > 0 && { conditions })
   };
+}
 
-  if (pod.spec?.nodeName) {
-    filtered.nodeName = pod.spec.nodeName;
-  }
+export function filterPodData(pod: any): FilteredPod {
+  const containerStatuses = getContainerStatuses(pod);
+  const containers = getSpecContainers(pod).map((c: any) => mapContainer(c, containerStatuses));
+  const restarts = calculateRestarts(containerStatuses);
+  const conditions = filterPodConditions(getPodConditions(pod));
+  return buildFilteredPod(pod, containers, restarts, conditions);
+}
 
-  if (conditions.length > 0) {
-    filtered.conditions = conditions;
-  }
+function isUnhealthyCondition(c: PodCondition): boolean {
+  if (c.type === 'Ready') return c.status !== 'True';
+  return c.status === 'True';
+}
 
-  return filtered;
+function filterNodeConditions(conditions: PodCondition[], onlyUnhealthy: boolean): PodCondition[] {
+  const mapped = conditions.map(mapCondition);
+  return onlyUnhealthy ? mapped.filter(isUnhealthyCondition) : mapped;
+}
+
+function mapTaints(taints: any[]): FilteredNode['taints'] {
+  return taints.map(t => ({
+    key: t.key,
+    effect: t.effect,
+    ...(t.value && { value: t.value })
+  }));
+}
+
+function getNodeConditions(node: any): PodCondition[] {
+  return node.status?.conditions || [];
+}
+
+function getNodeTaints(node: any): FilteredNode['taints'] | undefined {
+  const taints = node.spec?.taints;
+  return taints?.length > 0 ? mapTaints(taints) : undefined;
+}
+
+function buildFilteredNode(
+  node: any,
+  conditions: PodCondition[],
+  taints: FilteredNode['taints'] | undefined
+): FilteredNode {
+  const capacity = node.status?.capacity;
+  const allocatable = node.status?.allocatable;
+  return {
+    name: node.metadata?.name || '',
+    conditions,
+    ...(capacity && { capacity }),
+    ...(allocatable && { allocatable }),
+    ...(taints && { taints })
+  };
 }
 
 export function filterNodeData(node: any, options: FilterOptions = {}): FilteredNode {
-  let conditions = (node.status?.conditions || []).map((c: any) => ({
-    type: c.type,
-    status: c.status,
-    ...(c.reason && { reason: c.reason }),
-    ...(c.message && { message: c.message }),
-  }));
-
-  if (options.onlyUnhealthy) {
-    conditions = conditions.filter((c: PodCondition) => {
-      // Ready should be True for healthy, all others should be False for healthy
-      if (c.type === 'Ready') {
-        return c.status !== 'True';
-      }
-      return c.status === 'True';
-    });
-  }
-
-  const filtered: FilteredNode = {
-    name: node.metadata?.name || '',
-    conditions,
-  };
-
-  if (node.status?.capacity) {
-    filtered.capacity = node.status.capacity;
-  }
-
-  if (node.status?.allocatable) {
-    filtered.allocatable = node.status.allocatable;
-  }
-
-  if (node.spec?.taints?.length > 0) {
-    filtered.taints = node.spec.taints.map((t: any) => ({
-      key: t.key,
-      effect: t.effect,
-      ...(t.value && { value: t.value }),
-    }));
-  }
-
-  return filtered;
+  const conditions = filterNodeConditions(getNodeConditions(node), !!options.onlyUnhealthy);
+  const taints = getNodeTaints(node);
+  return buildFilteredNode(node, conditions, taints);
 }
 
 export function filterEventData(event: any, options: FilterOptions = {}): FilteredEvent | null {
@@ -206,9 +179,9 @@ export function filterEventData(event: any, options: FilterOptions = {}): Filter
     involvedObject: {
       kind: event.involvedObject?.kind,
       name: event.involvedObject?.name,
-      ...(event.involvedObject?.namespace && { namespace: event.involvedObject.namespace }),
+      ...(event.involvedObject?.namespace && { namespace: event.involvedObject.namespace })
     },
     ...(event.firstTimestamp && { firstTimestamp: event.firstTimestamp }),
-    ...(event.lastTimestamp && { lastTimestamp: event.lastTimestamp }),
+    ...(event.lastTimestamp && { lastTimestamp: event.lastTimestamp })
   };
 }

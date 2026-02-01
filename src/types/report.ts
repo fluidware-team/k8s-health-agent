@@ -1,7 +1,7 @@
 export enum IssueSeverity {
   CRITICAL = 'critical',
   WARNING = 'warning',
-  INFO = 'info',
+  INFO = 'info'
 }
 
 export interface ResourceReference {

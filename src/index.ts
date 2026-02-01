@@ -1,8 +1,6 @@
 import * as dotenv from 'dotenv';
-import { getAgent, getSystemMessage } from './agents/k8sAgent';
-import { HumanMessage } from '@langchain/core/messages';
 import { getLogger } from '@fluidware-it/saddlebag';
-import { buildUserPrompt } from './prompts/systemPrompt';
+import { getDiagnosticGraph } from './agents/diagnosticGraph';
 
 dotenv.config();
 
@@ -13,18 +11,14 @@ async function main() {
   const namespace = process.argv[2] || 'default';
 
   logger.info(`--- Namespace Analysis: ${namespace} ---`);
+  logger.info('Using multi-phase diagnostic graph (Triage -> Deep Dive -> Summary)');
 
-  const input = {
-    messages: [getSystemMessage(), new HumanMessage(buildUserPrompt(namespace))]
-  };
+  // Run the diagnostic graph
+  const result = await getDiagnosticGraph().invoke({ namespace });
 
-  const result = await getAgent().invoke(input);
-
-  // The last message in the list is the AI's final response
-  const lastMessage = result.messages[result.messages.length - 1];
-  logger.info('\nAGENT REPORT:');
-  // eslint-disable-next-line no-console
-  console.log(lastMessage?.content);
+  // The summary node already prints the formatted report
+  // Log completion
+  logger.info(`\nDiagnostic complete. Found ${result.issues.length} issue(s).`);
 }
 
 main().catch((e: any) => {
