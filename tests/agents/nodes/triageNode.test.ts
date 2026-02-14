@@ -30,7 +30,7 @@ describe('triageNode', () => {
         }
       ];
 
-      const issues = extractTriageIssues(pods, [], []);
+      const issues = extractTriageIssues(pods, []);
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.podName).toBe('crashing-pod');
@@ -49,7 +49,7 @@ describe('triageNode', () => {
         }
       ];
 
-      const issues = extractTriageIssues(pods, [], []);
+      const issues = extractTriageIssues(pods, []);
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.severity).toBe('warning');
@@ -76,7 +76,7 @@ describe('triageNode', () => {
         }
       ];
 
-      const issues = extractTriageIssues(pods, [], []);
+      const issues = extractTriageIssues(pods, []);
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.reason).toBe('Pending');
@@ -94,7 +94,7 @@ describe('triageNode', () => {
         }
       ];
 
-      const issues = extractTriageIssues([], [], events);
+      const issues = extractTriageIssues([], events);
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.podName).toBe('oom-pod');
@@ -112,7 +112,7 @@ describe('triageNode', () => {
         }
       ];
 
-      const issues = extractTriageIssues([], [], events);
+      const issues = extractTriageIssues([], events);
 
       expect(issues).toHaveLength(1);
       expect(issues[0]!.reason).toBe('FailedMount');
@@ -139,7 +139,7 @@ describe('triageNode', () => {
         }
       ];
 
-      const issues = extractTriageIssues(pods, [], events);
+      const issues = extractTriageIssues(pods, events);
 
       // Should only have one issue for the pod (CrashLoopBackOff takes precedence)
       const podIssues = issues.filter(i => i.podName === 'problem-pod');
@@ -147,21 +147,9 @@ describe('triageNode', () => {
       expect(podIssues[0]!.reason).toBe('CrashLoopBackOff');
     });
 
-    it('should identify unhealthy nodes', () => {
-      const nodes = [
-        {
-          name: 'unhealthy-node',
-          conditions: [
-            { type: 'Ready', status: 'False', reason: 'KubeletNotReady' },
-            { type: 'MemoryPressure', status: 'True', message: 'High memory usage' }
-          ]
-        }
-      ];
-
-      const issues = extractTriageIssues([], nodes, []);
-
-      // Node issues don't create pod issues, but we track them
-      expect(issues.length).toBe(0);
+    it('should return empty issues when no pods or events', () => {
+      const issues = extractTriageIssues([], []);
+      expect(issues).toHaveLength(0);
     });
   });
 
@@ -181,7 +169,7 @@ describe('triageNode', () => {
         events: []
       };
 
-      const result = analyzeTriageData(data, 'default');
+      const result = analyzeTriageData(data);
 
       expect(result.needsDeepDive).toBe(true);
       expect(result.triageResult.issues.length).toBeGreaterThan(0);
@@ -202,7 +190,7 @@ describe('triageNode', () => {
         events: []
       };
 
-      const result = analyzeTriageData(data, 'default');
+      const result = analyzeTriageData(data);
 
       expect(result.needsDeepDive).toBe(false);
       expect(result.triageResult.issues).toHaveLength(0);
@@ -216,7 +204,7 @@ describe('triageNode', () => {
         events: []
       };
 
-      const unhealthyResult = analyzeTriageData(unhealthyData, 'default');
+      const unhealthyResult = analyzeTriageData(unhealthyData);
       expect(unhealthyResult.triageResult.nodeStatus).toBe('critical');
 
       const healthyData: TriageData = {
@@ -225,7 +213,7 @@ describe('triageNode', () => {
         events: []
       };
 
-      const healthyResult = analyzeTriageData(healthyData, 'default');
+      const healthyResult = analyzeTriageData(healthyData);
       expect(healthyResult.triageResult.nodeStatus).toBe('healthy');
     });
   });

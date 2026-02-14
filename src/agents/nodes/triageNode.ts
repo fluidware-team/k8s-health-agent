@@ -1,6 +1,9 @@
+import { getLogger } from '@fluidware-it/saddlebag';
 import { listPodsTool, listNodesTool, listEventsTool } from '../../tools/triageTools';
 import type { TriageIssue, TriageResult, DiagnosticStateType } from '../state';
 import type { FilteredPod, FilteredNode, FilteredEvent, TriageData } from '../../types';
+
+const logger = getLogger();
 
 // Critical reasons that require immediate investigation
 const CRITICAL_REASONS = ['CrashLoopBackOff', 'OOMKilled', 'FailedMount', 'ImagePullBackOff', 'ErrImagePull'];
@@ -86,11 +89,7 @@ function checkEventIssues(events: FilteredEvent[], seenPods: Set<string>, issues
   }
 }
 
-export function extractTriageIssues(
-  pods: FilteredPod[],
-  _nodes: FilteredNode[],
-  events: FilteredEvent[]
-): TriageIssue[] {
+export function extractTriageIssues(pods: FilteredPod[], events: FilteredEvent[]): TriageIssue[] {
   const issues: TriageIssue[] = [];
   const seenPods = new Set<string>();
 
@@ -126,11 +125,8 @@ function getNodeStatus(nodes: FilteredNode[]): 'healthy' | 'warning' | 'critical
   return 'healthy';
 }
 
-export function analyzeTriageData(
-  data: TriageData,
-  _namespace: string
-): { triageResult: TriageResult; needsDeepDive: boolean } {
-  const issues = extractTriageIssues(data.pods, data.nodes, data.events);
+export function analyzeTriageData(data: TriageData): { triageResult: TriageResult; needsDeepDive: boolean } {
+  const issues = extractTriageIssues(data.pods, data.events);
 
   const healthyPods = data.pods
     .filter(p => p.status === 'Running' && p.restarts < HIGH_RESTART_THRESHOLD)
@@ -165,7 +161,8 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
     listEventsTool.invoke({ namespace })
   ]);
 
-  // Parse the results
+  // Parse results — track which API calls failed
+  const errors: string[] = [];
   let pods: FilteredPod[] = [];
   let nodes: FilteredNode[] = [];
   let events: FilteredEvent[] = [];
@@ -173,22 +170,47 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
   try {
     pods = JSON.parse(podsResult as string);
   } catch {
-    pods = [];
+    errors.push(`Pods: ${podsResult}`);
   }
 
   try {
     nodes = JSON.parse(nodesResult as string);
   } catch {
-    nodes = [];
+    errors.push(`Nodes: ${nodesResult}`);
   }
 
   try {
     events = JSON.parse(eventsResult as string);
   } catch {
-    events = [];
+    errors.push(`Events: ${eventsResult}`);
   }
 
-  const { triageResult, needsDeepDive } = analyzeTriageData({ pods, nodes, events }, namespace);
+  // If all API calls failed, the cluster is unreachable
+  if (errors.length === 3) {
+    logger.error('Cluster unreachable — all API calls failed');
+    const triageResult: TriageResult = {
+      issues: [
+        {
+          podName: 'N/A',
+          namespace,
+          reason: 'ClusterUnreachable',
+          severity: 'critical',
+          message: `Could not connect to cluster. Errors:\n${errors.join('\n')}`
+        }
+      ],
+      healthyPods: [],
+      nodeStatus: 'critical',
+      eventsSummary: errors
+    };
+    return { triageResult, needsDeepDive: false };
+  }
+
+  // Log partial failures as warnings
+  for (const error of errors) {
+    logger.warn(`Partial API failure: ${error}`);
+  }
+
+  const { triageResult, needsDeepDive } = analyzeTriageData({ pods, nodes, events });
 
   return {
     triageResult,

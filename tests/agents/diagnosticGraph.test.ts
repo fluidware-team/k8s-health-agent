@@ -147,5 +147,20 @@ describe('diagnosticGraph', () => {
       expect(result.needsDeepDive).toBe(true);
       expect(result.deepDiveFindings.length).toBeGreaterThan(0);
     });
+
+    it('should report ClusterUnreachable when all API calls fail', async () => {
+      const error = new Error('connect ECONNREFUSED');
+      vi.mocked(k8sCoreApi.listNamespacedPod).mockRejectedValue(error);
+      vi.mocked(k8sCoreApi.listNode).mockRejectedValue(error);
+      vi.mocked(k8sCoreApi.listNamespacedEvent).mockRejectedValue(error);
+
+      const graph = createDiagnosticGraph();
+      const result = await graph.invoke({ namespace: 'test-ns' });
+
+      expect(result.triageResult?.issues).toHaveLength(1);
+      expect(result.triageResult?.issues[0]!.reason).toBe('ClusterUnreachable');
+      expect(result.triageResult?.nodeStatus).toBe('critical');
+      expect(result.needsDeepDive).toBe(false);
+    });
   });
 });

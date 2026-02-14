@@ -14,6 +14,13 @@ function mapSeverity(severity: 'critical' | 'warning'): IssueSeverity {
 function getSuggestedCommands(issue: TriageIssue): string[] {
   const commands: string[] = [];
   const { podName, namespace, containerName, reason } = issue;
+
+  if (reason === 'ClusterUnreachable') {
+    commands.push('kubectl cluster-info');
+    commands.push('kubectl get nodes');
+    return commands;
+  }
+
   const container = containerName;
   const containerArgString = container ? ` -c ${container}` : '';
 
@@ -86,6 +93,11 @@ function getNextSteps(issue: TriageIssue): string[] {
       'Review recent changes to the deployment',
       'Check for liveness probe failures',
       'Monitor application health metrics'
+    ],
+    ClusterUnreachable: [
+      'Check your kubeconfig and current context',
+      'Verify VPN or network connectivity to the cluster',
+      'Check if the cluster API server is running'
     ]
   };
 
