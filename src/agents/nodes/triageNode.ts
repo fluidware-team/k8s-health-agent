@@ -10,6 +10,8 @@ const logger = getLogger();
 const CRITICAL_REASONS = ['CrashLoopBackOff', 'OOMKilled', 'FailedMount', 'ImagePullBackOff', 'ErrImagePull'];
 const WARNING_EVENT_REASONS = ['BackOff', 'FailedScheduling', 'FailedCreate', 'Unhealthy'];
 const HIGH_RESTART_THRESHOLD = 3;
+// Owner kinds that represent batch workloads (Jobs, CronJobs)
+const BATCH_OWNER_KINDS = ['Job', 'CronJob'];
 
 function checkContainerIssues(pod: FilteredPod, podKey: string, seenPods: Set<string>, issues: TriageIssue[]): void {
   for (const container of pod.containers) {
@@ -138,6 +140,22 @@ function enrichIssuesWithOwners(issues: TriageIssue[], pods: FilteredPod[], owne
   }
 }
 
+// Downgrade severity for batch workload (Job/CronJob) pods that simply failed
+// or completed — these are expected lifecycle states for batch jobs, not
+// critical service failures. Genuinely broken states (CrashLoopBackOff etc.)
+// remain at their original severity.
+function reclassifyBatchIssues(issues: TriageIssue[]): void {
+  for (const issue of issues) {
+    if (!issue.ownerKind || !BATCH_OWNER_KINDS.includes(issue.ownerKind)) continue;
+
+    // Only downgrade "Failed" status issues — critical container states
+    // (CrashLoopBackOff, OOMKilled, etc.) stay critical even for Jobs
+    if (issue.reason === 'Failed') {
+      issue.severity = 'info';
+    }
+  }
+}
+
 export function analyzeTriageData(
   data: TriageData,
   ownerMap: OwnerMap = new Map()
@@ -146,6 +164,9 @@ export function analyzeTriageData(
 
   // Enrich issues with resolved owner workload
   enrichIssuesWithOwners(issues, data.pods, ownerMap);
+
+  // Downgrade batch workload failures to info severity
+  reclassifyBatchIssues(issues);
 
   const healthyPods = data.pods
     .filter(p => p.status === 'Running' && p.restarts < HIGH_RESTART_THRESHOLD)

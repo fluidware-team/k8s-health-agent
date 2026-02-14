@@ -6,7 +6,7 @@ export interface TriageIssue {
   namespace: string;
   containerName?: string | undefined;
   reason: string;
-  severity: 'critical' | 'warning';
+  severity: 'critical' | 'warning' | 'info';
   restarts?: number | undefined;
   message?: string | undefined;
   // Resolved owner workload (e.g. Deployment, StatefulSet, CronJob)

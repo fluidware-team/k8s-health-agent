@@ -6,8 +6,10 @@ import { formatReport } from '../../utils/reportFormatter';
 export type { SummaryInput };
 
 // Map triage severity to report severity
-function mapSeverity(severity: 'critical' | 'warning'): IssueSeverity {
-  return severity === 'critical' ? IssueSeverity.CRITICAL : IssueSeverity.WARNING;
+function mapSeverity(severity: 'critical' | 'warning' | 'info'): IssueSeverity {
+  if (severity === 'critical') return IssueSeverity.CRITICAL;
+  if (severity === 'info') return IssueSeverity.INFO;
+  return IssueSeverity.WARNING;
 }
 
 // Generate suggested kubectl commands based on the issue type
