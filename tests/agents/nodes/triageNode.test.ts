@@ -227,6 +227,84 @@ describe('triageNode', () => {
     });
   });
 
+  describe('batch workload reclassification', () => {
+    it('should downgrade Failed Job pods from critical to info', () => {
+      const ownerMap: OwnerMap = new Map();
+      ownerMap.set('Job/cleanup-12345', { kind: 'CronJob', name: 'cleanup' });
+
+      const data: TriageData = {
+        pods: [
+          {
+            name: 'cleanup-12345-abc',
+            namespace: 'default',
+            status: 'Failed',
+            restarts: 0,
+            containers: [{ name: 'main', image: 'cleanup:v1' }],
+            ownerReferences: [{ kind: 'Job', name: 'cleanup-12345' }]
+          }
+        ],
+        nodes: [{ name: 'node-1', conditions: [{ type: 'Ready', status: 'True' }] }],
+        events: []
+      };
+
+      const result = analyzeTriageData(data, ownerMap);
+      const issue = result.triageResult.issues[0]!;
+
+      expect(issue.severity).toBe('info');
+      expect(issue.ownerKind).toBe('CronJob');
+      expect(issue.ownerName).toBe('cleanup');
+    });
+
+    it('should keep CrashLoopBackOff Job pods as critical', () => {
+      const data: TriageData = {
+        pods: [
+          {
+            name: 'broken-job-pod',
+            namespace: 'default',
+            status: 'Running',
+            restarts: 10,
+            containers: [{ name: 'main', image: 'job:v1', state: 'CrashLoopBackOff' }],
+            ownerReferences: [{ kind: 'Job', name: 'broken-job' }]
+          }
+        ],
+        nodes: [{ name: 'node-1', conditions: [{ type: 'Ready', status: 'True' }] }],
+        events: []
+      };
+
+      const result = analyzeTriageData(data);
+      const issue = result.triageResult.issues[0]!;
+
+      expect(issue.severity).toBe('critical');
+      expect(issue.ownerKind).toBe('Job');
+    });
+
+    it('should not downgrade Failed pods from Deployments', () => {
+      const ownerMap: OwnerMap = new Map();
+      ownerMap.set('ReplicaSet/web-abc', { kind: 'Deployment', name: 'web' });
+
+      const data: TriageData = {
+        pods: [
+          {
+            name: 'web-abc-xyz',
+            namespace: 'default',
+            status: 'Failed',
+            restarts: 0,
+            containers: [{ name: 'main', image: 'web:v1' }],
+            ownerReferences: [{ kind: 'ReplicaSet', name: 'web-abc' }]
+          }
+        ],
+        nodes: [{ name: 'node-1', conditions: [{ type: 'Ready', status: 'True' }] }],
+        events: []
+      };
+
+      const result = analyzeTriageData(data, ownerMap);
+      const issue = result.triageResult.issues[0]!;
+
+      expect(issue.severity).toBe('critical');
+      expect(issue.ownerKind).toBe('Deployment');
+    });
+  });
+
   describe('analyzeTriageData', () => {
     it('should return needsDeepDive=true when critical issues found', () => {
       const data: TriageData = {
