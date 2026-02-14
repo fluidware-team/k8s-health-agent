@@ -35,6 +35,11 @@ export interface FilteredContainer {
   };
 }
 
+export interface OwnerReference {
+  kind: string;
+  name: string;
+}
+
 export interface FilteredPod {
   name: string;
   namespace: string;
@@ -43,6 +48,7 @@ export interface FilteredPod {
   restarts: number;
   containers: FilteredContainer[];
   conditions?: PodCondition[];
+  ownerReferences?: OwnerReference[];
 }
 
 export interface FilteredNode {

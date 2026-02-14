@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyzeTriageData, extractTriageIssues } from '../../../src/agents/nodes/triageNode';
 import type { TriageData } from '../../../src/types';
+import type { OwnerMap } from '../../../src/utils/ownerResolver';
 
 describe('triageNode', () => {
   describe('extractTriageIssues', () => {
@@ -150,6 +151,79 @@ describe('triageNode', () => {
     it('should return empty issues when no pods or events', () => {
       const issues = extractTriageIssues([], []);
       expect(issues).toHaveLength(0);
+    });
+  });
+
+  describe('owner enrichment via analyzeTriageData', () => {
+    it('should enrich issues with resolved owner from ownerMap', () => {
+      const data: TriageData = {
+        pods: [
+          {
+            name: 'web-deploy-abc123-xyz',
+            namespace: 'default',
+            status: 'Running',
+            restarts: 10,
+            containers: [{ name: 'main', image: 'app', state: 'CrashLoopBackOff' }],
+            ownerReferences: [{ kind: 'ReplicaSet', name: 'web-deploy-abc123' }]
+          }
+        ],
+        nodes: [{ name: 'node-1', conditions: [{ type: 'Ready', status: 'True' }] }],
+        events: []
+      };
+
+      const ownerMap: OwnerMap = new Map();
+      ownerMap.set('ReplicaSet/web-deploy-abc123', { kind: 'Deployment', name: 'web-deploy' });
+
+      const result = analyzeTriageData(data, ownerMap);
+      const issue = result.triageResult.issues[0]!;
+
+      expect(issue.ownerKind).toBe('Deployment');
+      expect(issue.ownerName).toBe('web-deploy');
+    });
+
+    it('should use direct owner when no parent mapping exists', () => {
+      const data: TriageData = {
+        pods: [
+          {
+            name: 'sts-pod-0',
+            namespace: 'default',
+            status: 'Failed',
+            restarts: 0,
+            containers: [{ name: 'main', image: 'app' }],
+            ownerReferences: [{ kind: 'StatefulSet', name: 'my-sts' }]
+          }
+        ],
+        nodes: [{ name: 'node-1', conditions: [{ type: 'Ready', status: 'True' }] }],
+        events: []
+      };
+
+      const result = analyzeTriageData(data);
+      const issue = result.triageResult.issues[0]!;
+
+      expect(issue.ownerKind).toBe('StatefulSet');
+      expect(issue.ownerName).toBe('my-sts');
+    });
+
+    it('should leave owner fields undefined for pods without ownerReferences', () => {
+      const data: TriageData = {
+        pods: [
+          {
+            name: 'standalone-pod',
+            namespace: 'default',
+            status: 'Failed',
+            restarts: 0,
+            containers: [{ name: 'main', image: 'app' }]
+          }
+        ],
+        nodes: [{ name: 'node-1', conditions: [{ type: 'Ready', status: 'True' }] }],
+        events: []
+      };
+
+      const result = analyzeTriageData(data);
+      const issue = result.triageResult.issues[0]!;
+
+      expect(issue.ownerKind).toBeUndefined();
+      expect(issue.ownerName).toBeUndefined();
     });
   });
 

@@ -12,6 +12,8 @@ try {
 }
 
 export const k8sCoreApi = kc.makeApiClient(k8s.CoreV1Api);
+export const k8sAppsApi = kc.makeApiClient(k8s.AppsV1Api);
+export const k8sBatchApi = kc.makeApiClient(k8s.BatchV1Api);
 
 // Metrics API client
 export const k8sMetricsClient = new k8s.Metrics(kc);

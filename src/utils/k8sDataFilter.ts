@@ -5,7 +5,8 @@ import type {
   FilteredContainer,
   FilteredPod,
   FilteredNode,
-  FilteredEvent
+  FilteredEvent,
+  OwnerReference
 } from '../types/k8s';
 
 interface ContainerStateResult {
@@ -90,21 +91,38 @@ function calculateRestarts(containerStatuses: ContainerStatus[]): number {
   return containerStatuses.reduce((sum, cs) => sum + (cs.restartCount || 0), 0);
 }
 
+function extractOwnerReferences(pod: any): OwnerReference[] | undefined {
+  const refs = pod.metadata?.ownerReferences;
+  if (!Array.isArray(refs) || refs.length === 0) return undefined;
+  return refs.map((ref: any) => ({
+    kind: ref.kind,
+    name: ref.name
+  }));
+}
+
+function getPodIdentity(pod: any): { name: string; namespace: string; status: string } {
+  return {
+    name: pod.metadata?.name || '',
+    namespace: pod.metadata?.namespace || 'default',
+    status: pod.status?.phase || 'Unknown'
+  };
+}
+
 function buildFilteredPod(
   pod: any,
   containers: FilteredContainer[],
   restarts: number,
-  conditions: PodCondition[]
+  conditions: PodCondition[],
+  ownerReferences: OwnerReference[] | undefined
 ): FilteredPod {
   const nodeName = pod.spec?.nodeName;
   return {
-    name: pod.metadata?.name || '',
-    namespace: pod.metadata?.namespace || 'default',
-    status: pod.status?.phase || 'Unknown',
+    ...getPodIdentity(pod),
     restarts,
     containers,
     ...(nodeName && { nodeName }),
-    ...(conditions.length > 0 && { conditions })
+    ...(conditions.length > 0 && { conditions }),
+    ...(ownerReferences && { ownerReferences })
   };
 }
 
@@ -113,7 +131,8 @@ export function filterPodData(pod: any): FilteredPod {
   const containers = getSpecContainers(pod).map((c: any) => mapContainer(c, containerStatuses));
   const restarts = calculateRestarts(containerStatuses);
   const conditions = filterPodConditions(getPodConditions(pod));
-  return buildFilteredPod(pod, containers, restarts, conditions);
+  const ownerReferences = extractOwnerReferences(pod);
+  return buildFilteredPod(pod, containers, restarts, conditions, ownerReferences);
 }
 
 function isUnhealthyCondition(c: PodCondition): boolean {

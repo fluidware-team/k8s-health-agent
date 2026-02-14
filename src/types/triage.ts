@@ -9,6 +9,9 @@ export interface TriageIssue {
   severity: 'critical' | 'warning';
   restarts?: number | undefined;
   message?: string | undefined;
+  // Resolved owner workload (e.g. Deployment, StatefulSet, CronJob)
+  ownerKind?: string | undefined;
+  ownerName?: string | undefined;
 }
 
 // Represents triage results

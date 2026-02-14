@@ -126,6 +126,36 @@ describe('k8sDataFilter', () => {
       });
     });
 
+    it('should extract ownerReferences when present', () => {
+      const pod = {
+        metadata: {
+          name: 'my-pod',
+          namespace: 'default',
+          ownerReferences: [
+            { apiVersion: 'apps/v1', kind: 'ReplicaSet', name: 'my-deploy-abc123', uid: 'rs-uid', controller: true }
+          ]
+        },
+        spec: { containers: [{ name: 'main', image: 'nginx' }] },
+        status: { phase: 'Running' }
+      };
+
+      const filtered = filterPodData(pod);
+
+      expect(filtered.ownerReferences).toEqual([{ kind: 'ReplicaSet', name: 'my-deploy-abc123' }]);
+    });
+
+    it('should omit ownerReferences when pod has none', () => {
+      const pod = {
+        metadata: { name: 'standalone-pod', namespace: 'default' },
+        spec: { containers: [{ name: 'main', image: 'nginx' }] },
+        status: { phase: 'Running' }
+      };
+
+      const filtered = filterPodData(pod);
+
+      expect(filtered.ownerReferences).toBeUndefined();
+    });
+
     it('should keep resource requests and limits', () => {
       const podWithResources = {
         metadata: { name: 'resource-pod', namespace: 'default' },

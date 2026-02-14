@@ -2,6 +2,7 @@ import { getLogger } from '@fluidware-it/saddlebag';
 import { listPodsTool, listNodesTool, listEventsTool } from '../../tools/triageTools';
 import type { TriageIssue, TriageResult, DiagnosticStateType } from '../state';
 import type { FilteredPod, FilteredNode, FilteredEvent, TriageData } from '../../types';
+import { buildOwnerMap, resolveOwner, type OwnerMap } from '../../utils/ownerResolver';
 
 const logger = getLogger();
 
@@ -125,8 +126,26 @@ function getNodeStatus(nodes: FilteredNode[]): 'healthy' | 'warning' | 'critical
   return 'healthy';
 }
 
-export function analyzeTriageData(data: TriageData): { triageResult: TriageResult; needsDeepDive: boolean } {
+// Enrich triage issues with resolved owner info from pod ownerReferences
+function enrichIssuesWithOwners(issues: TriageIssue[], pods: FilteredPod[], ownerMap: OwnerMap): void {
+  for (const issue of issues) {
+    const pod = pods.find(p => p.name === issue.podName);
+    const resolved = resolveOwner(pod?.ownerReferences, ownerMap);
+    if (resolved) {
+      issue.ownerKind = resolved.kind;
+      issue.ownerName = resolved.name;
+    }
+  }
+}
+
+export function analyzeTriageData(
+  data: TriageData,
+  ownerMap: OwnerMap = new Map()
+): { triageResult: TriageResult; needsDeepDive: boolean } {
   const issues = extractTriageIssues(data.pods, data.events);
+
+  // Enrich issues with resolved owner workload
+  enrichIssuesWithOwners(issues, data.pods, ownerMap);
 
   const healthyPods = data.pods
     .filter(p => p.status === 'Running' && p.restarts < HIGH_RESTART_THRESHOLD)
@@ -154,11 +173,12 @@ export function analyzeTriageData(data: TriageData): { triageResult: TriageResul
 export async function triageNode(state: DiagnosticStateType): Promise<Partial<DiagnosticStateType>> {
   const namespace = state.namespace;
 
-  // Use the tools to gather data
-  const [podsResult, nodesResult, eventsResult] = await Promise.all([
+  // Use the tools to gather data, fetch owner references in parallel
+  const [podsResult, nodesResult, eventsResult, ownerMap] = await Promise.all([
     listPodsTool.invoke({ namespace }),
     listNodesTool.invoke({}),
-    listEventsTool.invoke({ namespace })
+    listEventsTool.invoke({ namespace }),
+    buildOwnerMap(namespace)
   ]);
 
   // Parse results — track which API calls failed
@@ -210,7 +230,7 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
     logger.warn(`Partial API failure: ${error}`);
   }
 
-  const { triageResult, needsDeepDive } = analyzeTriageData({ pods, nodes, events });
+  const { triageResult, needsDeepDive } = analyzeTriageData({ pods, nodes, events }, ownerMap);
 
   return {
     triageResult,
