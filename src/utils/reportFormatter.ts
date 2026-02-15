@@ -10,6 +10,9 @@ function formatIssue(issue: DiagnosticIssue): string {
   if (issue.resource.namespace) {
     lines.push(`**Namespace:** ${issue.resource.namespace}`);
   }
+  if (issue.affectedPods && issue.affectedPods.length > 0) {
+    lines.push(`**Affected pods:** ${issue.affectedPods.join(', ')}`);
+  }
   lines.push('');
   lines.push(issue.description);
 

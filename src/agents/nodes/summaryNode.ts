@@ -117,11 +117,86 @@ function findingsForPod(podName: string, findings: string[]): string {
   return logsSection.join('\n').replace(/```/g, '').trim();
 }
 
+// Build a group key for each issue based on its owner workload and reason.
+// Pods without an owner are keyed individually.
+function issueGroupKey(issue: TriageIssue): string {
+  if (issue.ownerKind && issue.ownerName) {
+    return `${issue.ownerKind}/${issue.ownerName}/${issue.reason}`;
+  }
+  return `Pod/${issue.podName}/${issue.reason}`;
+}
+
+// Build a human-readable description for a single (ungrouped) issue.
+function buildSingleIssueDescription(issue: TriageIssue): string {
+  let description = `Pod "${issue.podName}" `;
+  if (issue.reason === 'HighRestartCount') {
+    description += `has ${issue.restarts} restarts.`;
+  } else if (issue.message) {
+    description += `${issue.reason}: ${issue.message}`;
+  } else {
+    description += `is in ${issue.reason} state.`;
+  }
+  return description;
+}
+
+// Convert a group of triage issues (same owner + reason) into one DiagnosticIssue.
+function convertGroupToIssue(group: TriageIssue[], deepDiveFindings: string[]): DiagnosticIssue {
+  const first = group[0]!;
+  const isGrouped = group.length > 1;
+  const hasOwner = first.ownerKind && first.ownerName;
+
+  const resourceKind = hasOwner ? first.ownerKind! : 'Pod';
+  const resourceName = hasOwner ? first.ownerName! : first.podName;
+  const resourceLabel = `${resourceKind}/${resourceName}`;
+
+  const title = isGrouped
+    ? `${first.reason}: ${resourceLabel} (${group.length} pods)`
+    : `${first.reason}: ${hasOwner ? resourceLabel : first.podName}`;
+
+  let description = isGrouped
+    ? `${group.length} pods in ${first.reason} state: ${group.map(i => i.podName).join(', ')}.`
+    : buildSingleIssueDescription(first);
+
+  // Aggregate deep-dive findings for all pods in the group
+  const allFindings = group.map(i => findingsForPod(i.podName, deepDiveFindings)).filter(Boolean);
+  if (allFindings.length > 0) {
+    description += `\n\n**Log analysis:**\n${allFindings.join('\n\n')}`;
+  }
+
+  return {
+    severity: mapSeverity(first.severity),
+    title,
+    description,
+    resource: { kind: resourceKind, name: resourceName, namespace: first.namespace },
+    affectedPods: isGrouped ? group.map(i => i.podName) : undefined,
+    suggestedCommands: getSuggestedCommands(first),
+    nextSteps: getNextSteps(first)
+  };
+}
+
+// Group triage issues that share the same workload owner and reason,
+// producing one DiagnosticIssue per group.
+export function groupIssuesByWorkload(issues: TriageIssue[], deepDiveFindings: string[]): DiagnosticIssue[] {
+  // Collect issues into groups while preserving insertion order
+  const groups = new Map<string, TriageIssue[]>();
+  for (const issue of issues) {
+    const key = issueGroupKey(issue);
+    const group = groups.get(key);
+    if (group) {
+      group.push(issue);
+    } else {
+      groups.set(key, [issue]);
+    }
+  }
+
+  return [...groups.values()].map(group => convertGroupToIssue(group, deepDiveFindings));
+}
+
 export function buildDiagnosticReport(input: SummaryInput): DiagnosticReport {
   const { namespace, triageResult, deepDiveFindings, llmAnalysis } = input;
   const timestamp = new Date().toISOString();
 
-  // Build summary
+  // Build summary — count individual pods, not groups
   let summary = '';
   if (triageResult.issues.length === 0) {
     summary = `Namespace "${namespace}" is healthy. `;
@@ -138,36 +213,8 @@ export function buildDiagnosticReport(input: SummaryInput): DiagnosticReport {
     summary += ` Node status: ${triageResult.nodeStatus}.`;
   }
 
-  // Convert triage issues to diagnostic issues
-  const issues: DiagnosticIssue[] = triageResult.issues.map(issue => {
-    const findings = findingsForPod(issue.podName, deepDiveFindings);
-    let description = `Pod "${issue.podName}" `;
-
-    if (issue.reason === 'HighRestartCount') {
-      description += `has ${issue.restarts} restarts.`;
-    } else if (issue.message) {
-      description += `${issue.reason}: ${issue.message}`;
-    } else {
-      description += `is in ${issue.reason} state.`;
-    }
-
-    if (findings) {
-      description += `\n\n**Log analysis:**\n${findings}`;
-    }
-
-    return {
-      severity: mapSeverity(issue.severity),
-      title: `${issue.reason}: ${issue.podName}`,
-      description,
-      resource: {
-        kind: 'Pod',
-        name: issue.podName,
-        namespace: issue.namespace
-      },
-      suggestedCommands: getSuggestedCommands(issue),
-      nextSteps: getNextSteps(issue)
-    };
-  });
+  // Group triage issues by workload owner and convert to diagnostic issues
+  const issues = groupIssuesByWorkload(triageResult.issues, deepDiveFindings);
 
   // Build healthy resources list
   const healthyResources: HealthyResource[] = triageResult.healthyPods.map(podName => ({

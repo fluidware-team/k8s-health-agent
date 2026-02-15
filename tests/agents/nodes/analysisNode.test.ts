@@ -90,6 +90,45 @@ describe('analysisNode', () => {
     expect(userMessage).toContain('Memory usage: 512Mi');
   });
 
+  it('should include owner workload context in the prompt', async () => {
+    mockInvoke.mockResolvedValue({ content: 'Analysis result' });
+
+    const state = makeState({
+      triageResult: {
+        issues: [
+          {
+            podName: 'gw-aaa',
+            namespace: 'ns',
+            reason: 'CrashLoopBackOff',
+            severity: 'critical',
+            ownerKind: 'Deployment',
+            ownerName: 'gateway'
+          },
+          {
+            podName: 'gw-bbb',
+            namespace: 'ns',
+            reason: 'CrashLoopBackOff',
+            severity: 'critical',
+            ownerKind: 'Deployment',
+            ownerName: 'gateway'
+          }
+        ],
+        healthyPods: [],
+        nodeStatus: 'healthy',
+        eventsSummary: []
+      }
+    });
+
+    await analysisNode(state);
+
+    const messages = mockInvoke.mock.calls[0]![0];
+    const userMessage = messages[1].content;
+    // Both pods should be grouped under the same Deployment line
+    expect(userMessage).toContain('Deployment/gateway');
+    expect(userMessage).toContain('gw-aaa');
+    expect(userMessage).toContain('gw-bbb');
+  });
+
   it('should return empty analysis on LLM failure', async () => {
     mockInvoke.mockRejectedValue(new Error('API error'));
 
