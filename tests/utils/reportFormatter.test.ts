@@ -213,6 +213,50 @@ describe('reportFormatter', () => {
     });
   });
 
+  it('should render affectedPods when present', () => {
+    const report: DiagnosticReport = {
+      namespace: 'default',
+      timestamp: '2024-01-01T00:00:00Z',
+      summary: 'Found 1 critical issue',
+      issues: [
+        {
+          severity: IssueSeverity.CRITICAL,
+          title: 'CrashLoopBackOff: Deployment/gateway (3 pods)',
+          description: '3 pods in CrashLoopBackOff state: gw-aaa, gw-bbb, gw-ccc.',
+          resource: { kind: 'Deployment', name: 'gateway', namespace: 'default' },
+          affectedPods: ['gw-aaa', 'gw-bbb', 'gw-ccc']
+        }
+      ],
+      healthyResources: []
+    };
+
+    const formatted = formatReport(report);
+
+    expect(formatted).toContain('**Affected pods:** gw-aaa, gw-bbb, gw-ccc');
+    expect(formatted).toContain('**Resource:** Deployment/gateway');
+  });
+
+  it('should not render affectedPods line when absent', () => {
+    const report: DiagnosticReport = {
+      namespace: 'default',
+      timestamp: '2024-01-01T00:00:00Z',
+      summary: 'Found 1 issue',
+      issues: [
+        {
+          severity: IssueSeverity.CRITICAL,
+          title: 'CrashLoopBackOff: crash-pod',
+          description: 'Pod "crash-pod" is in CrashLoopBackOff state.',
+          resource: { kind: 'Pod', name: 'crash-pod', namespace: 'default' }
+        }
+      ],
+      healthyResources: []
+    };
+
+    const formatted = formatReport(report);
+
+    expect(formatted).not.toContain('**Affected pods:**');
+  });
+
   describe('DiagnosticIssue', () => {
     it('should support all severity levels', () => {
       expect(IssueSeverity.CRITICAL).toBe('critical');

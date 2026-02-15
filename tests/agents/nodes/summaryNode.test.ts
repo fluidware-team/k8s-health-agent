@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDiagnosticReport, type SummaryInput } from '../../../src/agents/nodes/summaryNode';
+import { buildDiagnosticReport, groupIssuesByWorkload, type SummaryInput } from '../../../src/agents/nodes/summaryNode';
 import { IssueSeverity } from '../../../src/types/report';
 
 describe('summaryNode', () => {
@@ -196,6 +196,166 @@ describe('summaryNode', () => {
       const report = buildDiagnosticReport(input);
 
       expect(report.issues[0]!.description).toContain('Database connection failed');
+    });
+  });
+
+  describe('groupIssuesByWorkload', () => {
+    it('should group pods with the same owner and reason into one issue', () => {
+      const issues = [
+        {
+          podName: 'gw-aaa',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        },
+        {
+          podName: 'gw-bbb',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        },
+        {
+          podName: 'gw-ccc',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        }
+      ];
+
+      const result = groupIssuesByWorkload(issues, []);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.title).toContain('gateway');
+      expect(result[0]!.title).toContain('3 pods');
+      expect(result[0]!.resource.kind).toBe('Deployment');
+      expect(result[0]!.resource.name).toBe('gateway');
+      expect(result[0]!.affectedPods).toEqual(['gw-aaa', 'gw-bbb', 'gw-ccc']);
+    });
+
+    it('should keep different owners as separate groups', () => {
+      const issues = [
+        {
+          podName: 'gw-aaa',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        },
+        {
+          podName: 'api-xxx',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'api'
+        }
+      ];
+
+      const result = groupIssuesByWorkload(issues, []);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]!.resource.name).toBe('gateway');
+      expect(result[1]!.resource.name).toBe('api');
+    });
+
+    it('should keep pods without an owner as individual entries', () => {
+      const issues = [
+        { podName: 'standalone-1', namespace: 'ns', reason: 'Failed', severity: 'critical' as const },
+        { podName: 'standalone-2', namespace: 'ns', reason: 'Failed', severity: 'critical' as const }
+      ];
+
+      const result = groupIssuesByWorkload(issues, []);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]!.resource.kind).toBe('Pod');
+      expect(result[0]!.resource.name).toBe('standalone-1');
+      expect(result[0]!.affectedPods).toBeUndefined();
+      expect(result[1]!.resource.name).toBe('standalone-2');
+    });
+
+    it('should aggregate deep-dive findings across grouped pods', () => {
+      const issues = [
+        {
+          podName: 'gw-aaa',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        },
+        {
+          podName: 'gw-bbb',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        }
+      ];
+      const findings = [
+        '## Investigation: gw-aaa\nLogs:\nConnection refused',
+        '## Investigation: gw-bbb\nLogs:\nTimeout waiting for DB'
+      ];
+
+      const result = groupIssuesByWorkload(issues, findings);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.description).toContain('Connection refused');
+      expect(result[0]!.description).toContain('Timeout waiting for DB');
+    });
+
+    it('should separate same-owner issues with different reasons', () => {
+      const issues = [
+        {
+          podName: 'gw-aaa',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        },
+        {
+          podName: 'gw-bbb',
+          namespace: 'ns',
+          reason: 'OOMKilled',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        }
+      ];
+
+      const result = groupIssuesByWorkload(issues, []);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]!.title).toContain('CrashLoopBackOff');
+      expect(result[1]!.title).toContain('OOMKilled');
+    });
+
+    it('should use owner in title for single-pod groups with owner info', () => {
+      const issues = [
+        {
+          podName: 'gw-aaa',
+          namespace: 'ns',
+          reason: 'CrashLoopBackOff',
+          severity: 'critical' as const,
+          ownerKind: 'Deployment',
+          ownerName: 'gateway'
+        }
+      ];
+
+      const result = groupIssuesByWorkload(issues, []);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.title).toBe('CrashLoopBackOff: Deployment/gateway');
+      expect(result[0]!.resource.kind).toBe('Deployment');
+      expect(result[0]!.affectedPods).toBeUndefined();
     });
   });
 });

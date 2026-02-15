@@ -21,6 +21,7 @@ export interface DiagnosticIssue {
   title: string;
   description: string;
   resource: ResourceReference;
+  affectedPods?: string[];
   suggestedCommands?: string[];
   nextSteps?: string[];
   proposedSolution?: string;

@@ -13,13 +13,29 @@ function buildAnalysisPrompt(state: DiagnosticStateType): string {
   lines.push(`Namespace: ${namespace}`);
   lines.push('');
 
-  // Triage issues
+  // Triage issues — grouped by owner workload when available
   if (triageResult && triageResult.issues.length > 0) {
     lines.push('## Issues Found');
+
+    // Group issues by owner so the LLM sees workload-level context
+    const groups = new Map<string, typeof triageResult.issues>();
     for (const issue of triageResult.issues) {
-      const restarts = issue.restarts ? ` (restarts: ${issue.restarts})` : '';
-      const msg = issue.message ? ` — ${issue.message}` : '';
-      lines.push(`- [${issue.severity}] ${issue.podName}: ${issue.reason}${restarts}${msg}`);
+      const key = issue.ownerKind && issue.ownerName ? `${issue.ownerKind}/${issue.ownerName}` : `Pod/${issue.podName}`;
+      const group = groups.get(key);
+      if (group) {
+        group.push(issue);
+      } else {
+        groups.set(key, [issue]);
+      }
+    }
+
+    for (const [workload, issues] of groups) {
+      const reasons = [...new Set(issues.map(i => i.reason))].join(', ');
+      const maxRestarts = Math.max(...issues.map(i => i.restarts ?? 0));
+      const restarts = maxRestarts > 0 ? ` (max restarts: ${maxRestarts})` : '';
+      const pods = issues.map(i => i.podName).join(', ');
+      const severity = issues[0]!.severity;
+      lines.push(`- [${severity}] ${workload}: ${reasons} (pods: ${pods})${restarts}`);
     }
     lines.push('');
   }
