@@ -96,6 +96,28 @@ function formatIssue(issue: DiagnosticIssue): string {
   return lines.join('\n');
 }
 
+// Render a compact overview table listing every issue with severity, reason, resource, and pod count.
+// Placed near the top of the report so readers get the full picture at a glance.
+function formatOverviewTable(issues: DiagnosticIssue[]): string {
+  if (issues.length === 0) return '';
+
+  const lines: string[] = [];
+  lines.push('## Overview');
+  lines.push('');
+  lines.push('| Severity | Reason | Resource | Pods Affected |');
+  lines.push('|----------|--------|----------|---------------|');
+
+  for (const issue of issues) {
+    const severity = issue.severity.toUpperCase();
+    const reason = extractReason(issue.title);
+    const resource = `${issue.resource.kind}/${issue.resource.name}`;
+    const pods = issue.affectedPods ? String(issue.affectedPods.length) : '-';
+    lines.push(`| ${severity} | ${reason} | ${resource} | ${pods} |`);
+  }
+
+  return lines.join('\n');
+}
+
 function formatHealthyResources(resources: HealthyResource[]): string {
   if (resources.length === 0) return '';
 
@@ -125,6 +147,15 @@ export function formatReport(report: DiagnosticReport): string {
 
   // Collapse issues that share the same reason within each severity group
   const collapsedIssues = collapseRepeatedIssues(report.issues);
+
+  // Executive summary table — quick at-a-glance view before the detailed sections
+  const overviewTable = formatOverviewTable(collapsedIssues);
+  if (overviewTable) {
+    lines.push('');
+    lines.push(overviewTable);
+    lines.push('');
+    lines.push('---');
+  }
 
   // Render issue sections grouped by severity
   const severitySections: { severity: IssueSeverity; title: string }[] = [

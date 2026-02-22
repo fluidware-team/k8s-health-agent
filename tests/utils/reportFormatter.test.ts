@@ -264,4 +264,149 @@ describe('reportFormatter', () => {
       expect(IssueSeverity.INFO).toBe('info');
     });
   });
+
+  describe('executive summary table', () => {
+    it('renders an overview table when issues are present', () => {
+      const report: DiagnosticReport = {
+        namespace: 'default',
+        timestamp: '2024-01-01T00:00:00Z',
+        summary: 'Found issues',
+        issues: [
+          {
+            severity: IssueSeverity.CRITICAL,
+            title: 'CrashLoopBackOff: Deployment/frontend',
+            description: 'Pod is crashing',
+            resource: { kind: 'Deployment', name: 'frontend', namespace: 'default' }
+          }
+        ],
+        healthyResources: []
+      };
+
+      const formatted = formatReport(report);
+
+      expect(formatted).toContain('## Overview');
+      expect(formatted).toContain('| Severity |');
+      expect(formatted).toContain('CRITICAL');
+      expect(formatted).toContain('CrashLoopBackOff');
+      expect(formatted).toContain('Deployment/frontend');
+    });
+
+    it('does not render the overview table when there are no issues', () => {
+      const report: DiagnosticReport = {
+        namespace: 'default',
+        timestamp: '2024-01-01T00:00:00Z',
+        summary: 'Healthy',
+        issues: [],
+        healthyResources: [{ kind: 'Pod', name: 'web', status: 'Running' }]
+      };
+
+      const formatted = formatReport(report);
+
+      expect(formatted).not.toContain('## Overview');
+    });
+
+    it('overview table appears before the detailed issue sections', () => {
+      const report: DiagnosticReport = {
+        namespace: 'default',
+        timestamp: '2024-01-01T00:00:00Z',
+        summary: 'Found issues',
+        issues: [
+          {
+            severity: IssueSeverity.CRITICAL,
+            title: 'CrashLoopBackOff: Deployment/api',
+            description: 'Crashing',
+            resource: { kind: 'Deployment', name: 'api' }
+          }
+        ],
+        healthyResources: []
+      };
+
+      const formatted = formatReport(report);
+
+      expect(formatted.indexOf('## Overview')).toBeLessThan(formatted.indexOf('## Critical Issues'));
+    });
+
+    it('shows pod count in the overview table when affectedPods is set', () => {
+      const report: DiagnosticReport = {
+        namespace: 'default',
+        timestamp: '2024-01-01T00:00:00Z',
+        summary: 'Found issues',
+        issues: [
+          {
+            severity: IssueSeverity.CRITICAL,
+            title: 'CrashLoopBackOff: Deployment/gateway',
+            description: 'Pods crashing',
+            resource: { kind: 'Deployment', name: 'gateway', namespace: 'default' },
+            affectedPods: ['gw-aaa', 'gw-bbb', 'gw-ccc']
+          }
+        ],
+        healthyResources: []
+      };
+
+      const formatted = formatReport(report);
+
+      // The overview row should contain the pod count
+      expect(formatted).toContain('3');
+    });
+
+    it('shows a dash for pod count when affectedPods is absent', () => {
+      const report: DiagnosticReport = {
+        namespace: 'default',
+        timestamp: '2024-01-01T00:00:00Z',
+        summary: 'Found issues',
+        issues: [
+          {
+            severity: IssueSeverity.CRITICAL,
+            title: 'OOMKilled: Pod/single-pod',
+            description: 'OOM',
+            resource: { kind: 'Pod', name: 'single-pod', namespace: 'default' }
+          }
+        ],
+        healthyResources: []
+      };
+
+      const formatted = formatReport(report);
+
+      // The table row should use '-' for the pod count column
+      expect(formatted).toMatch(/\|\s*-\s*\|/);
+    });
+
+    it('lists all issues (all severities) in the overview table', () => {
+      const report: DiagnosticReport = {
+        namespace: 'default',
+        timestamp: '2024-01-01T00:00:00Z',
+        summary: 'Mixed',
+        issues: [
+          {
+            severity: IssueSeverity.CRITICAL,
+            title: 'CrashLoopBackOff: Deployment/a',
+            description: 'Crashing',
+            resource: { kind: 'Deployment', name: 'a' }
+          },
+          {
+            severity: IssueSeverity.WARNING,
+            title: 'HighRestartCount: Pod/b',
+            description: 'Restarting',
+            resource: { kind: 'Pod', name: 'b' }
+          },
+          {
+            severity: IssueSeverity.INFO,
+            title: 'Failed: Job/c',
+            description: 'Job done',
+            resource: { kind: 'Job', name: 'c' }
+          }
+        ],
+        healthyResources: []
+      };
+
+      const formatted = formatReport(report);
+
+      expect(formatted).toContain('CRITICAL');
+      expect(formatted).toContain('WARNING');
+      expect(formatted).toContain('INFO');
+      expect(formatted).toContain('CrashLoopBackOff');
+      expect(formatted).toContain('HighRestartCount');
+      expect(formatted).toContain('Failed');
+    });
+  });
 });
