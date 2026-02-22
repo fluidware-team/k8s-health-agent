@@ -17,7 +17,6 @@ function makeState(overrides: Partial<DiagnosticStateType> = {}): DiagnosticStat
     deepDiveFindings: [],
     llmAnalysis: '',
     issues: [],
-    healthyResources: [],
     needsDeepDive: false,
     ...overrides
   };

@@ -41,8 +41,7 @@ describe('diagnosticGraph', () => {
         messages: [],
         deepDiveFindings: [],
         llmAnalysis: '',
-        issues: [],
-        healthyResources: []
+        issues: []
       };
 
       expect(shouldDeepDive(state)).toBe('deep_dive');
@@ -56,8 +55,7 @@ describe('diagnosticGraph', () => {
         messages: [],
         deepDiveFindings: [],
         llmAnalysis: '',
-        issues: [],
-        healthyResources: []
+        issues: []
       };
 
       expect(shouldDeepDive(state)).toBe('summary');

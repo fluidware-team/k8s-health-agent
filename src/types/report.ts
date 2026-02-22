@@ -10,12 +10,6 @@ export interface ResourceReference {
   namespace?: string;
 }
 
-export interface HealthyResource {
-  kind: string;
-  name: string;
-  status: string;
-}
-
 export interface DiagnosticIssue {
   severity: IssueSeverity;
   title: string;
@@ -31,6 +25,5 @@ export interface DiagnosticReport {
   timestamp: string;
   summary: string;
   issues: DiagnosticIssue[];
-  healthyResources: HealthyResource[];
   llmAnalysis?: string;
 }
