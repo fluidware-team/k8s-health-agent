@@ -309,6 +309,33 @@
 - 107 tests passing (was 101 — added 6 new tests, note: step 6 branch not merged)
 - Lint clean
 
+## Step 9: Add `describe_resource` tool [DONE]
+
+**Branch:** `feature/09-executive-summary-table` (continued)
+
+### What was done
+
+- Created `src/tools/investigationTools.ts` with `describeResourceTool`
+- Accepts `kind` (pod/deployment/statefulset/daemonset), `name`, `namespace`
+- Makes parallel API calls: resource fetch + namespace events
+- Returns human-readable summary with: phase/replica counts, conditions, container states, recent warning events (filtered by resource name, capped at 10)
+- Extracted helper functions (`formatConditions`, `formatEvents`, `formatContainerState`, `describeContainerStatuses`) to keep cyclomatic complexity under lint threshold
+- Graceful error handling: K8s API errors are parsed into readable messages
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/tools/investigationTools.ts` | Created — `describeResourceTool` |
+| `tests/tools/describeResourceTool.test.ts` | Created — 8 tests (TDD) |
+
+### Test results
+
+- 115 tests passing (was 107 — added 8 new tests)
+- Lint clean
+
+---
+
 ## Step 8: Compact healthy resources [DONE]
 
 ### What was done
