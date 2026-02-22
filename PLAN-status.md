@@ -309,6 +309,33 @@
 - 107 tests passing (was 101 — added 6 new tests, note: step 6 branch not merged)
 - Lint clean
 
+## Step 12: Hybrid agent analysis node [DONE]
+
+**Branch:** `feature/09-executive-summary-table` (continued)
+
+### What was done
+
+- Replaced single `model.invoke` in `analysisNode` with `createReactAgent()` from `@langchain/langgraph/prebuilt`
+- Agent has access to 6 investigation tools: `describe_resource`, `get_workload_spec`, `list_configmaps_and_secrets`, `read_pod_logs`, `get_pod_metrics`, `list_events`
+- `ANALYSIS_MAX_ITERATIONS` env var (default 3) caps tool-use rounds; set to 0 to fall back to single invoke
+- `recursionLimit = maxIterations * 2 + 1` (each iteration = agent node + tools node + final answer)
+- Extracted `runWithReactAgent` and `runWithSingleInvoke` helpers; graceful fallback to empty string on error
+- Updated tests: uses `vi.hoisted()` for mock variables; 9 tests covering both paths, tool list, recursionLimit, prompt content, owner grouping
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/agents/nodes/analysisNode.ts` | Rewritten — hybrid agent with `createReactAgent`, env-var cap, single-invoke fallback |
+| `tests/agents/nodes/analysisNode.test.ts` | Updated — 9 tests (was 6), mocks `createReactAgent` and model |
+
+### Test results
+
+- 132 tests passing (was 129 — +3 net: 9 new tests replaced 6 old)
+- Lint clean
+
+---
+
 ## Step 11: Add `list_configmaps_and_secrets` tool [DONE]
 
 **Branch:** `feature/09-executive-summary-table` (continued)
