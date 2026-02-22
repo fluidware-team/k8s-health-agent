@@ -309,6 +309,32 @@
 - 107 tests passing (was 101 — added 6 new tests, note: step 6 branch not merged)
 - Lint clean
 
+## Step 11: Add `list_configmaps_and_secrets` tool [DONE]
+
+**Branch:** `feature/09-executive-summary-table` (continued)
+
+### What was done
+
+- Added `listConfigsAndSecretsTool` to `src/tools/investigationTools.ts`
+- Accepts `namespace` and optional `namePrefix` filter
+- Fetches ConfigMaps and Secrets in parallel
+- Returns names, types (secrets), and creation timestamps — never any values or data fields
+- Filters by name prefix when provided
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/tools/investigationTools.ts` | Modified — added `listConfigsAndSecretsTool` and helpers |
+| `tests/tools/listConfigsAndSecretsTool.test.ts` | Created — 6 tests (TDD) |
+
+### Test results
+
+- 129 tests passing (was 123 — added 6 new tests)
+- Lint clean
+
+---
+
 ## Step 10: Add `get_workload_spec` tool [DONE]
 
 **Branch:** `feature/09-executive-summary-table` (continued)
