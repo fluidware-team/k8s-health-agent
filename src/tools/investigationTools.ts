@@ -112,6 +112,85 @@ function describeDaemonSet(ds: any): string[] {
   return lines;
 }
 
+// --- getWorkloadSpecTool helpers ---
+
+function formatResources(resources: any): string {
+  if (!resources) return '';
+  const parts: string[] = [];
+  const fmt = (obj: Record<string, unknown>) =>
+    Object.entries(obj)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ');
+  if (resources.requests) parts.push(`requests={${fmt(resources.requests)}}`);
+  if (resources.limits) parts.push(`limits={${fmt(resources.limits)}}`);
+  return parts.join(', ');
+}
+
+function formatProbe(probe: any): string {
+  if (probe.httpGet) return `httpGet ${probe.httpGet.path}:${probe.httpGet.port}`;
+  if (probe.exec) return `exec [${(probe.exec.command ?? []).join(' ')}]`;
+  if (probe.tcpSocket) return `tcpSocket :${probe.tcpSocket.port}`;
+  return 'configured';
+}
+
+function formatVolume(vol: any): string {
+  if (vol.configMap) return `${vol.name} (configMap: ${vol.configMap.name})`;
+  if (vol.secret) return `${vol.name} (secret: ${vol.secret.secretName})`;
+  if (vol.persistentVolumeClaim) return `${vol.name} (pvc: ${vol.persistentVolumeClaim.claimName})`;
+  if (vol.emptyDir !== undefined) return `${vol.name} (emptyDir)`;
+  if (vol.hostPath) return `${vol.name} (hostPath: ${vol.hostPath.path})`;
+  return `${vol.name} (other)`;
+}
+
+// Format a single container spec — env var names only, never values.
+function formatContainerSpec(container: any): string[] {
+  const lines: string[] = [`**${container.name}:**`, `  Image: ${container.image}`];
+
+  const resources = formatResources(container.resources);
+  if (resources) lines.push(`  Resources: ${resources}`);
+
+  if (container.env?.length > 0) {
+    lines.push(`  Env vars (names only): ${container.env.map((e: any) => e.name).join(', ')}`);
+  }
+
+  if (container.ports?.length > 0) {
+    lines.push(`  Ports: ${container.ports.map((p: any) => `${p.containerPort}/${p.protocol ?? 'TCP'}`).join(', ')}`);
+  }
+
+  if (container.livenessProbe) lines.push(`  Liveness probe: ${formatProbe(container.livenessProbe)}`);
+  if (container.readinessProbe) lines.push(`  Readiness probe: ${formatProbe(container.readinessProbe)}`);
+
+  return lines;
+}
+
+function formatContainerList(containers: any[]): string[] {
+  if (containers.length === 0) return [];
+  const lines: string[] = ['', '### Containers', ''];
+  for (const c of containers) lines.push(...formatContainerSpec(c), '');
+  return lines;
+}
+
+function formatVolumeList(volumes: any[]): string[] {
+  if (volumes.length === 0) return [];
+  const lines: string[] = ['### Volumes'];
+  for (const v of volumes) lines.push(`  - ${formatVolume(v)}`);
+  return lines;
+}
+
+// Build output lines from a workload spec (shared by deployment/statefulset/daemonset).
+function buildWorkloadSpecLines(kind: string, name: string, namespace: string, spec: any): string[] {
+  const template = spec.template?.spec ?? {};
+  const lines: string[] = [`## ${kind}/${name} (namespace: ${namespace})`];
+
+  if (spec.replicas !== undefined) lines.push(`Replicas: ${spec.replicas}`);
+  if (spec.strategy?.type) lines.push(`Strategy: ${spec.strategy.type}`);
+
+  lines.push(...formatContainerList(template.containers ?? []));
+  lines.push(...formatVolumeList(template.volumes ?? []));
+
+  return lines;
+}
+
 // Tool to describe a Kubernetes resource — equivalent to kubectl describe.
 // Returns status conditions, replica/container states, and recent warning events.
 export const describeResourceTool = tool(
@@ -196,6 +275,42 @@ export const describeResourceTool = tool(
       kind: z.enum(['pod', 'deployment', 'statefulset', 'daemonset']).describe('The kind of resource to describe'),
       name: z.string().describe('The name of the resource'),
       namespace: z.string().describe('The namespace containing the resource')
+    })
+  }
+);
+
+// Tool to fetch the workload spec (deployment/statefulset/daemonset).
+// Returns: replicas, rollout strategy, container images, resource requests/limits,
+// env var names (never values), ports, probes, and volumes.
+export const getWorkloadSpecTool = tool(
+  async ({ kind, name, namespace }) => {
+    try {
+      let raw: any;
+      switch (kind) {
+        case 'deployment':
+          raw = await k8sAppsApi.readNamespacedDeployment({ name, namespace });
+          break;
+        case 'statefulset':
+          raw = await k8sAppsApi.readNamespacedStatefulSet({ name, namespace });
+          break;
+        case 'daemonset':
+          raw = await k8sAppsApi.readNamespacedDaemonSet({ name, namespace });
+          break;
+      }
+      return buildWorkloadSpecLines(kind, name, namespace, raw.spec ?? {}).join('\n');
+    } catch (e: any) {
+      const msg = extractK8sErrorMessage(e, `${kind}/${name}`);
+      return `Error fetching spec for ${kind}/${name}: ${msg}`;
+    }
+  },
+  {
+    name: 'get_workload_spec',
+    description:
+      'Fetches the workload spec for a Deployment, StatefulSet, or DaemonSet. Returns replica count, rollout strategy, container images, resource requests/limits, environment variable names (never values), ports, liveness/readiness probes, and volumes. Useful for diagnosing misconfigurations and resource sizing issues.',
+    schema: z.object({
+      kind: z.enum(['deployment', 'statefulset', 'daemonset']).describe('The kind of workload to inspect'),
+      name: z.string().describe('The name of the workload'),
+      namespace: z.string().describe('The namespace containing the workload')
     })
   }
 );

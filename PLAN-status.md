@@ -309,6 +309,33 @@
 - 107 tests passing (was 101 — added 6 new tests, note: step 6 branch not merged)
 - Lint clean
 
+## Step 10: Add `get_workload_spec` tool [DONE]
+
+**Branch:** `feature/09-executive-summary-table` (continued)
+
+### What was done
+
+- Added `getWorkloadSpecTool` to `src/tools/investigationTools.ts`
+- Accepts `kind` (deployment/statefulset/daemonset), `name`, `namespace`
+- Returns: replicas, strategy, per-container spec (image, resources, env var **names only**, ports, probes), volumes with types
+- Env var values are never included — only names (security boundary)
+- Volume type and referenced resource name (configMap/secret/pvc) are shown
+- Extracted `formatContainerList`, `formatVolumeList` to keep cyclomatic complexity under threshold
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/tools/investigationTools.ts` | Modified — added `getWorkloadSpecTool` and helpers |
+| `tests/tools/getWorkloadSpecTool.test.ts` | Created — 8 tests (TDD) |
+
+### Test results
+
+- 123 tests passing (was 115 — added 8 new tests)
+- Lint clean
+
+---
+
 ## Step 9: Add `describe_resource` tool [DONE]
 
 **Branch:** `feature/09-executive-summary-table` (continued)
