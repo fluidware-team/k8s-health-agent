@@ -314,3 +314,64 @@ export const getWorkloadSpecTool = tool(
     })
   }
 );
+
+// Format a list of resources (configmaps or secrets) as readable lines.
+function formatResourceList(items: any[], label: string, formatItem: (item: any) => string): string {
+  if (items.length === 0) return `No ${label} found.`;
+  return [`${label} (${items.length}):`, ...items.map(i => `  - ${formatItem(i)}`)].join('\n');
+}
+
+function formatConfigMap(cm: any): string {
+  const ts = cm.metadata?.creationTimestamp ?? 'unknown';
+  return `${cm.metadata?.name} (created: ${ts})`;
+}
+
+function formatSecret(secret: any): string {
+  const ts = secret.metadata?.creationTimestamp ?? 'unknown';
+  const type = secret.type ?? 'Opaque';
+  return `${secret.metadata?.name} [${type}] (created: ${ts})`;
+}
+
+function applyPrefix(items: any[], namePrefix?: string): any[] {
+  if (!namePrefix) return items;
+  return items.filter(i => i.metadata?.name?.startsWith(namePrefix));
+}
+
+// Tool to list ConfigMaps and Secrets by name — never exposes values.
+// Useful for verifying that a referenced config or secret actually exists.
+export const listConfigsAndSecretsTool = tool(
+  async ({ namespace, namePrefix }) => {
+    try {
+      const [cmRes, secretRes] = await Promise.all([
+        k8sCoreApi.listNamespacedConfigMap({ namespace }),
+        k8sCoreApi.listNamespacedSecret({ namespace })
+      ]);
+
+      const configMaps = applyPrefix(cmRes.items ?? [], namePrefix);
+      const secrets = applyPrefix(secretRes.items ?? [], namePrefix);
+
+      return [
+        `## ConfigMaps and Secrets in namespace: ${namespace}${namePrefix ? ` (prefix: "${namePrefix}")` : ''}`,
+        '',
+        formatResourceList(configMaps, 'ConfigMaps', formatConfigMap),
+        '',
+        formatResourceList(secrets, 'Secrets', formatSecret)
+      ].join('\n');
+    } catch (e: any) {
+      const msg = extractK8sErrorMessage(e, `namespace ${namespace}`);
+      return `Error listing configs and secrets in ${namespace}: ${msg}`;
+    }
+  },
+  {
+    name: 'list_configmaps_and_secrets',
+    description:
+      'Lists ConfigMaps and Secrets in a namespace by name only — never exposes values. Useful for verifying that a referenced ConfigMap or Secret actually exists when logs report missing configs or secrets.',
+    schema: z.object({
+      namespace: z.string().describe('The namespace to list resources in'),
+      namePrefix: z
+        .string()
+        .optional()
+        .describe('Optional prefix to filter resources by name (e.g. "app-" to list only app-* entries)')
+    })
+  }
+);
