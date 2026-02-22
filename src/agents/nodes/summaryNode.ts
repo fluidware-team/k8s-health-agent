@@ -1,5 +1,5 @@
 import type { TriageIssue, DiagnosticStateType } from '../state';
-import { IssueSeverity, type DiagnosticIssue, type DiagnosticReport, type HealthyResource } from '../../types/report';
+import { IssueSeverity, type DiagnosticIssue, type DiagnosticReport } from '../../types/report';
 import type { SummaryInput } from '../../types/summary';
 import { formatReport } from '../../utils/reportFormatter';
 
@@ -205,6 +205,9 @@ export function buildDiagnosticReport(input: SummaryInput): DiagnosticReport {
     const criticalCount = triageResult.issues.filter(i => i.severity === 'critical').length;
     const warningCount = triageResult.issues.filter(i => i.severity === 'warning').length;
     summary = `Found ${criticalCount} critical issue(s) and ${warningCount} warning(s) in namespace "${namespace}".`;
+    if (triageResult.healthyPods.length > 0) {
+      summary += ` ${triageResult.healthyPods.length} pods running normally.`;
+    }
   }
 
   if (triageResult.nodeStatus !== 'healthy') {
@@ -214,19 +217,11 @@ export function buildDiagnosticReport(input: SummaryInput): DiagnosticReport {
   // Group triage issues by workload owner and convert to diagnostic issues
   const issues = groupIssuesByWorkload(triageResult.issues, deepDiveFindings);
 
-  // Build healthy resources list
-  const healthyResources: HealthyResource[] = triageResult.healthyPods.map(podName => ({
-    kind: 'Pod',
-    name: podName,
-    status: 'Running'
-  }));
-
   return {
     namespace,
     timestamp,
     summary,
     issues,
-    healthyResources,
     llmAnalysis: llmAnalysis || undefined
   };
 }
@@ -248,7 +243,6 @@ export async function summaryNode(state: DiagnosticStateType): Promise<Partial<D
   console.log(formattedReport);
 
   return {
-    issues: report.issues,
-    healthyResources: report.healthyResources
+    issues: report.issues
   };
 }

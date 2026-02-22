@@ -1,5 +1,5 @@
 import { Annotation } from '@langchain/langgraph';
-import type { DiagnosticIssue, HealthyResource } from '../types/report';
+import type { DiagnosticIssue } from '../types/report';
 import type { TriageIssue, TriageResult } from '../types/triage';
 
 export type { TriageIssue, TriageResult };
@@ -31,11 +31,6 @@ export const DiagnosticState = Annotation.Root({
 
   // Final report data
   issues: Annotation<DiagnosticIssue[]>({
-    reducer: (x, y) => x.concat(y),
-    default: () => []
-  }),
-
-  healthyResources: Annotation<HealthyResource[]>({
     reducer: (x, y) => x.concat(y),
     default: () => []
   }),

@@ -35,7 +35,7 @@ describe('summaryNode', () => {
       expect(report.issues[0]!.severity).toBe(IssueSeverity.CRITICAL);
       expect(report.issues[0]!.title).toContain('CrashLoopBackOff');
       expect(report.issues[0]!.suggestedCommands).toBeDefined();
-      expect(report.healthyResources).toHaveLength(2);
+      expect(report.summary).toContain('2 pods running normally');
     });
 
     it('should build a report for a healthy cluster', () => {
@@ -54,8 +54,8 @@ describe('summaryNode', () => {
       const report = buildDiagnosticReport(input);
 
       expect(report.summary).toContain('healthy');
+      expect(report.summary).toContain('3 pods running normally');
       expect(report.issues).toHaveLength(0);
-      expect(report.healthyResources).toHaveLength(3);
     });
 
     it('should include suggested kubectl commands for issues', () => {

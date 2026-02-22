@@ -25,8 +25,7 @@ describe('reportFormatter', () => {
             resource: { kind: 'Pod', name: 'my-app-123', namespace: 'default' },
             suggestedCommands: ['kubectl describe pod my-app-123 -n default', 'kubectl top pod my-app-123 -n default']
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -50,8 +49,7 @@ describe('reportFormatter', () => {
             description: 'Pod api-server has 5 restarts in the last hour',
             resource: { kind: 'Pod', name: 'api-server', namespace: 'production' }
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -65,21 +63,15 @@ describe('reportFormatter', () => {
       const report: DiagnosticReport = {
         namespace: 'default',
         timestamp: '2024-01-01T00:00:00Z',
-        summary: 'Cluster is healthy',
-        issues: [],
-        healthyResources: [
-          { kind: 'Pod', name: 'web-app', status: 'Running' },
-          { kind: 'Pod', name: 'api-server', status: 'Running' },
-          { kind: 'Node', name: 'node-1', status: 'Ready' }
-        ]
+        summary: 'Cluster is healthy. 3 pods running normally.',
+        issues: []
       };
 
       const formatted = formatReport(report);
 
-      expect(formatted).toContain('## Healthy Resources');
-      expect(formatted).toContain('web-app');
-      expect(formatted).toContain('api-server');
-      expect(formatted).toContain('node-1');
+      expect(formatted).toContain('Cluster is healthy');
+      expect(formatted).toContain('3 pods running normally');
+      expect(formatted).not.toContain('## Healthy Resources');
       expect(formatted).not.toContain('## Critical Issues');
       expect(formatted).not.toContain('## Warnings');
     });
@@ -100,8 +92,7 @@ describe('reportFormatter', () => {
               'kubectl describe pod app-123 -n default'
             ]
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -135,8 +126,7 @@ describe('reportFormatter', () => {
             description: 'Just informational',
             resource: { kind: 'Pod', name: 'pod-3' }
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -163,8 +153,7 @@ describe('reportFormatter', () => {
             resource: { kind: 'Pod', name: 'app' },
             nextSteps: ['Check application logs', 'Review resource limits', 'Check for OOM events']
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -203,8 +192,7 @@ describe('reportFormatter', () => {
         namespace: 'default',
         timestamp: '2024-01-01T00:00:00Z',
         summary: 'Healthy',
-        issues: [],
-        healthyResources: []
+        issues: []
       };
 
       const formatted = formatReport(report);
@@ -278,8 +266,7 @@ describe('reportFormatter', () => {
             description: 'Pod is crashing',
             resource: { kind: 'Deployment', name: 'frontend', namespace: 'default' }
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -296,8 +283,7 @@ describe('reportFormatter', () => {
         namespace: 'default',
         timestamp: '2024-01-01T00:00:00Z',
         summary: 'Healthy',
-        issues: [],
-        healthyResources: [{ kind: 'Pod', name: 'web', status: 'Running' }]
+        issues: []
       };
 
       const formatted = formatReport(report);
@@ -317,8 +303,7 @@ describe('reportFormatter', () => {
             description: 'Crashing',
             resource: { kind: 'Deployment', name: 'api' }
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -339,8 +324,7 @@ describe('reportFormatter', () => {
             resource: { kind: 'Deployment', name: 'gateway', namespace: 'default' },
             affectedPods: ['gw-aaa', 'gw-bbb', 'gw-ccc']
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -361,8 +345,7 @@ describe('reportFormatter', () => {
             description: 'OOM',
             resource: { kind: 'Pod', name: 'single-pod', namespace: 'default' }
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);
@@ -395,8 +378,7 @@ describe('reportFormatter', () => {
             description: 'Job done',
             resource: { kind: 'Job', name: 'c' }
           }
-        ],
-        healthyResources: []
+        ]
       };
 
       const formatted = formatReport(report);

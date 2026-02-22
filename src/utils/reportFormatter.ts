@@ -1,4 +1,4 @@
-import type { DiagnosticIssue, DiagnosticReport, HealthyResource } from '../types/report';
+import type { DiagnosticIssue, DiagnosticReport } from '../types/report';
 import { IssueSeverity } from '../types/report';
 
 // Extract the reason prefix from a DiagnosticIssue title.
@@ -118,21 +118,6 @@ function formatOverviewTable(issues: DiagnosticIssue[]): string {
   return lines.join('\n');
 }
 
-function formatHealthyResources(resources: HealthyResource[]): string {
-  if (resources.length === 0) return '';
-
-  const lines: string[] = [];
-  lines.push('## Healthy Resources');
-  lines.push('');
-  lines.push('| Kind | Name | Status |');
-  lines.push('|------|------|--------|');
-  resources.forEach(r => {
-    lines.push(`| ${r.kind} | ${r.name} | ${r.status} |`);
-  });
-
-  return lines.join('\n');
-}
-
 export function formatReport(report: DiagnosticReport): string {
   const lines: string[] = [];
 
@@ -180,12 +165,6 @@ export function formatReport(report: DiagnosticReport): string {
     lines.push('## Analysis & Proposed Solutions');
     lines.push('');
     lines.push(report.llmAnalysis);
-  }
-
-  // Healthy Resources
-  if (report.healthyResources.length > 0) {
-    lines.push('');
-    lines.push(formatHealthyResources(report.healthyResources));
   }
 
   return lines.join('\n');
