@@ -1,12 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the model provider
-const mockInvoke = vi.fn();
+// vi.hoisted ensures these are available inside vi.mock factory (which is hoisted to top of file)
+const { mockAgentInvoke, mockModelInvoke } = vi.hoisted(() => ({
+  mockAgentInvoke: vi.fn(),
+  mockModelInvoke: vi.fn()
+}));
+
+vi.mock('@langchain/langgraph/prebuilt', () => ({
+  createReactAgent: vi.fn().mockReturnValue({ invoke: mockAgentInvoke })
+}));
+
 vi.mock('../../../src/agents/modelProvider', () => ({
-  getChatModel: () => ({ invoke: mockInvoke })
+  getChatModel: () => ({ invoke: mockModelInvoke })
 }));
 
 import { analysisNode } from '../../../src/agents/nodes/analysisNode';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import type { DiagnosticStateType } from '../../../src/agents/state';
 
 function makeState(overrides: Partial<DiagnosticStateType> = {}): DiagnosticStateType {
@@ -22,9 +31,24 @@ function makeState(overrides: Partial<DiagnosticStateType> = {}): DiagnosticStat
   };
 }
 
+const stateWithIssue = makeState({
+  triageResult: {
+    issues: [{ podName: 'crash-pod', namespace: 'default', reason: 'CrashLoopBackOff', severity: 'critical' }],
+    healthyPods: [],
+    nodeStatus: 'healthy',
+    eventsSummary: []
+  },
+  deepDiveFindings: ['## Investigation: crash-pod\nError: Connection refused']
+});
+
 describe('analysisNode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: mock agent returns a final analysis message
+    mockAgentInvoke.mockResolvedValue({
+      messages: [{ content: '**Root cause:** DB connection refused' }]
+    });
+    vi.unstubAllEnvs();
   });
 
   it('should skip analysis when no issues found', async () => {
@@ -35,7 +59,8 @@ describe('analysisNode', () => {
     const result = await analysisNode(state);
 
     expect(result.llmAnalysis).toBe('');
-    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(mockAgentInvoke).not.toHaveBeenCalled();
+    expect(mockModelInvoke).not.toHaveBeenCalled();
   });
 
   it('should skip analysis when triageResult is null', async () => {
@@ -44,31 +69,41 @@ describe('analysisNode', () => {
     const result = await analysisNode(state);
 
     expect(result.llmAnalysis).toBe('');
-    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(mockAgentInvoke).not.toHaveBeenCalled();
   });
 
-  it('should call the LLM and return analysis', async () => {
-    mockInvoke.mockResolvedValue({ content: '**Root cause:** DB connection refused' });
+  it('should use createReactAgent by default and return analysis', async () => {
+    const result = await analysisNode(stateWithIssue);
 
-    const state = makeState({
-      triageResult: {
-        issues: [{ podName: 'crash-pod', namespace: 'default', reason: 'CrashLoopBackOff', severity: 'critical' }],
-        healthyPods: [],
-        nodeStatus: 'healthy',
-        eventsSummary: []
-      },
-      deepDiveFindings: ['## Investigation: crash-pod\nError: Connection refused']
-    });
-
-    const result = await analysisNode(state);
-
-    expect(mockInvoke).toHaveBeenCalledOnce();
+    expect(createReactAgent).toHaveBeenCalledOnce();
+    expect(mockAgentInvoke).toHaveBeenCalledOnce();
     expect(result.llmAnalysis).toContain('Root cause');
   });
 
-  it('should include deep-dive findings in the prompt', async () => {
-    mockInvoke.mockResolvedValue({ content: 'Analysis result' });
+  it('should pass the 6 investigation tools to createReactAgent', async () => {
+    await analysisNode(stateWithIssue);
 
+    const { tools } = vi.mocked(createReactAgent).mock.calls[0]![0] as any;
+    const toolNames = tools.map((t: any) => t.name);
+    expect(toolNames).toContain('describe_resource');
+    expect(toolNames).toContain('get_workload_spec');
+    expect(toolNames).toContain('list_configmaps_and_secrets');
+    expect(toolNames).toContain('read_pod_logs');
+    expect(toolNames).toContain('get_pod_metrics');
+    expect(toolNames).toContain('list_events');
+  });
+
+  it('should apply a recursionLimit derived from ANALYSIS_MAX_ITERATIONS', async () => {
+    vi.stubEnv('ANALYSIS_MAX_ITERATIONS', '5');
+
+    await analysisNode(stateWithIssue);
+
+    // maxIterations=5 → recursionLimit = 5*2+1 = 11
+    const invokeConfig = mockAgentInvoke.mock.calls[0]![1];
+    expect(invokeConfig?.recursionLimit).toBe(11);
+  });
+
+  it('should include issues and deep-dive findings in the prompt', async () => {
     const state = makeState({
       triageResult: {
         issues: [{ podName: 'pod-1', namespace: 'ns', reason: 'OOMKilled', severity: 'critical', restarts: 5 }],
@@ -81,17 +116,13 @@ describe('analysisNode', () => {
 
     await analysisNode(state);
 
-    // Verify the prompt sent to the LLM contains the issue and findings
-    const messages = mockInvoke.mock.calls[0]![0];
-    const userMessage = messages[1].content;
+    const userMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
     expect(userMessage).toContain('pod-1');
     expect(userMessage).toContain('OOMKilled');
     expect(userMessage).toContain('Memory usage: 512Mi');
   });
 
-  it('should include owner workload context in the prompt', async () => {
-    mockInvoke.mockResolvedValue({ content: 'Analysis result' });
-
+  it('should group issues by owner workload in the prompt', async () => {
     const state = makeState({
       triageResult: {
         issues: [
@@ -120,27 +151,27 @@ describe('analysisNode', () => {
 
     await analysisNode(state);
 
-    const messages = mockInvoke.mock.calls[0]![0];
-    const userMessage = messages[1].content;
-    // Both pods should be grouped under the same Deployment line
+    const userMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
     expect(userMessage).toContain('Deployment/gateway');
     expect(userMessage).toContain('gw-aaa');
     expect(userMessage).toContain('gw-bbb');
   });
 
-  it('should return empty analysis on LLM failure', async () => {
-    mockInvoke.mockRejectedValue(new Error('API error'));
+  it('should fall back to single model.invoke when ANALYSIS_MAX_ITERATIONS=0', async () => {
+    vi.stubEnv('ANALYSIS_MAX_ITERATIONS', '0');
+    mockModelInvoke.mockResolvedValue({ content: 'Fallback analysis' });
 
-    const state = makeState({
-      triageResult: {
-        issues: [{ podName: 'pod-1', namespace: 'default', reason: 'CrashLoopBackOff', severity: 'critical' }],
-        healthyPods: [],
-        nodeStatus: 'healthy',
-        eventsSummary: []
-      }
-    });
+    const result = await analysisNode(stateWithIssue);
 
-    const result = await analysisNode(state);
+    expect(createReactAgent).not.toHaveBeenCalled();
+    expect(mockModelInvoke).toHaveBeenCalledOnce();
+    expect(result.llmAnalysis).toBe('Fallback analysis');
+  });
+
+  it('should return empty analysis when the agent fails', async () => {
+    mockAgentInvoke.mockRejectedValue(new Error('API error'));
+
+    const result = await analysisNode(stateWithIssue);
 
     expect(result.llmAnalysis).toBe('');
   });
