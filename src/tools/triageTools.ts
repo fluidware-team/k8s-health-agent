@@ -78,6 +78,3 @@ export const listEventsTool = tool(
     })
   }
 );
-
-// Export all triage tools as an array for easy use
-export const triageTools = [listPodsTool, listNodesTool, listEventsTool];

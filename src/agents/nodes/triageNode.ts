@@ -175,17 +175,14 @@ export function analyzeTriageData(
 
   const nodeStatus = getNodeStatus(data.nodes);
 
-  const eventsSummary = data.events.filter(e => e.type === 'Warning').map(e => `${e.reason}: ${e.message}`);
-
   const triageResult: TriageResult = {
     issues,
     healthyPods,
-    nodeStatus,
-    eventsSummary
+    nodeStatus
   };
 
-  // Need deep dive if there are any critical issues or warnings
-  const needsDeepDive = issues.some(i => i.severity === 'critical') || issues.length > 0;
+  // Need deep dive if there are critical or warning issues (info-level batch failures do not need it)
+  const needsDeepDive = issues.some(i => i.severity === 'critical' || i.severity === 'warning');
 
   return { triageResult, needsDeepDive };
 }
@@ -240,8 +237,7 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
         }
       ],
       healthyPods: [],
-      nodeStatus: 'critical',
-      eventsSummary: errors
+      nodeStatus: 'critical'
     };
     return { triageResult, needsDeepDive: false };
   }

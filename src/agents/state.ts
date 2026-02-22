@@ -1,5 +1,4 @@
 import { Annotation } from '@langchain/langgraph';
-import { BaseMessage } from '@langchain/core/messages';
 import type { DiagnosticIssue, HealthyResource } from '../types/report';
 import type { TriageIssue, TriageResult } from '../types/triage';
 
@@ -10,12 +9,6 @@ export const DiagnosticState = Annotation.Root({
   // Input
   namespace: Annotation<string>({
     reducer: (_, y) => y
-  }),
-
-  // LLM messages for conversation history
-  messages: Annotation<BaseMessage[]>({
-    reducer: (x, y) => x.concat(y),
-    default: () => []
   }),
 
   // Triage phase results

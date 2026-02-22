@@ -24,7 +24,6 @@ export interface DiagnosticIssue {
   affectedPods?: string[];
   suggestedCommands?: string[];
   nextSteps?: string[];
-  proposedSolution?: string;
 }
 
 export interface DiagnosticReport {
