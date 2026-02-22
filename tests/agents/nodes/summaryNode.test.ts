@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildDiagnosticReport, groupIssuesByWorkload, type SummaryInput } from '../../../src/agents/nodes/summaryNode';
+import { buildDiagnosticReport, groupIssuesByWorkload } from '../../../src/agents/nodes/summaryNode';
+import type { SummaryInput } from '../../../src/types/summary';
 import { IssueSeverity } from '../../../src/types/report';
 
 describe('summaryNode', () => {

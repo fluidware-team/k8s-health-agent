@@ -3,8 +3,6 @@ import { IssueSeverity, type DiagnosticIssue, type DiagnosticReport, type Health
 import type { SummaryInput } from '../../types/summary';
 import { formatReport } from '../../utils/reportFormatter';
 
-export type { SummaryInput };
-
 // Map triage severity to report severity
 function mapSeverity(severity: 'critical' | 'warning' | 'info'): IssueSeverity {
   if (severity === 'critical') return IssueSeverity.CRITICAL;

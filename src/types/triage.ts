@@ -19,7 +19,6 @@ export interface TriageResult {
   issues: TriageIssue[];
   healthyPods: string[];
   nodeStatus: 'healthy' | 'warning' | 'critical';
-  eventsSummary: string[];
 }
 
 // Data collected for triage analysis
