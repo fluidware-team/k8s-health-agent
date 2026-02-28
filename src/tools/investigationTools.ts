@@ -1,21 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { k8sCoreApi, k8sAppsApi } from '../cluster/k8sClient';
-
-// Extract a human-readable message from a K8s API error.
-function extractK8sErrorMessage(e: any, fallbackContext: string): string {
-  if (typeof e.body === 'string') {
-    try {
-      const parsed = JSON.parse(e.body);
-      if (parsed?.message) return parsed.message;
-    } catch {
-      return e.body;
-    }
-  }
-  if (e.response?.body?.message) return e.response.body.message;
-  if (e.message) return e.message;
-  return `Unknown error for ${fallbackContext}`;
-}
+import { extractK8sErrorMessage } from '../utils/k8sErrorUtils';
 
 // Format condition list into readable lines: "Type=Status (Reason): message"
 function formatConditions(conditions: any[]): string[] {
@@ -261,6 +247,8 @@ export const describeResourceTool = tool(
             formatEvents(eventsRes.items ?? [], name)
           ].join('\n');
         }
+        default:
+          return `Unsupported resource kind: ${kind}`;
       }
     } catch (e: any) {
       const msg = extractK8sErrorMessage(e, `${kind}/${name}`);
@@ -296,6 +284,8 @@ export const getWorkloadSpecTool = tool(
         case 'daemonset':
           raw = await k8sAppsApi.readNamespacedDaemonSet({ name, namespace });
           break;
+        default:
+          return `Unsupported workload kind: ${kind}`;
       }
       return buildWorkloadSpecLines(kind, name, namespace, raw.spec ?? {}).join('\n');
     } catch (e: any) {

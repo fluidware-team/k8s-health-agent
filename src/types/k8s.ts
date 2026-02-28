@@ -1,7 +1,6 @@
 // Types for filtering K8s API responses
 
 export interface FilterOptions {
-  onlyUnhealthy?: boolean;
   onlyWarnings?: boolean;
 }
 
@@ -44,7 +43,6 @@ export interface FilteredPod {
   name: string;
   namespace: string;
   status: string;
-  nodeName?: string;
   restarts: number;
   containers: FilteredContainer[];
   conditions?: PodCondition[];
@@ -53,22 +51,16 @@ export interface FilteredPod {
 
 export interface FilteredNode {
   name: string;
-  capacity?: Record<string, string>;
-  allocatable?: Record<string, string>;
   conditions: PodCondition[];
-  taints?: { key: string; effect: string; value?: string }[];
 }
 
 export interface FilteredEvent {
   reason: string;
   message: string;
   type: string;
-  count?: number;
   involvedObject: {
     kind: string;
     name: string;
     namespace?: string;
   };
-  firstTimestamp?: string;
-  lastTimestamp?: string;
 }

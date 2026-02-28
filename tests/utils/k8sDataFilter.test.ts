@@ -51,7 +51,6 @@ describe('k8sDataFilter', () => {
       expect(filtered.name).toBe('test-pod');
       expect(filtered.namespace).toBe('default');
       expect(filtered.status).toBe('Running');
-      expect(filtered.nodeName).toBe('node-1');
       expect(filtered.restarts).toBe(5);
       expect(filtered.containers).toHaveLength(1);
       expect(filtered.containers[0]!.name).toBe('container-name');
@@ -214,10 +213,7 @@ describe('k8sDataFilter', () => {
       const filtered = filterNodeData(rawNode);
 
       expect(filtered.name).toBe('node-1');
-      expect(filtered.capacity).toEqual({ cpu: '4', memory: '16Gi', pods: '110' });
-      expect(filtered.allocatable).toEqual({ cpu: '3800m', memory: '15Gi', pods: '100' });
       expect(filtered.conditions).toHaveLength(3);
-      expect(filtered.taints).toEqual([{ key: 'node.kubernetes.io/unschedulable', effect: 'NoSchedule' }]);
 
       // Should not include unnecessary metadata (using 'any' cast to test that these don't exist)
       expect((filtered as any).uid).toBeUndefined();
@@ -225,7 +221,7 @@ describe('k8sDataFilter', () => {
       expect((filtered as any).managedFields).toBeUndefined();
     });
 
-    it('should return only unhealthy conditions when requested', () => {
+    it('should return all conditions', () => {
       const nodeWithIssues = {
         metadata: { name: 'unhealthy-node' },
         status: {
@@ -237,11 +233,12 @@ describe('k8sDataFilter', () => {
         }
       };
 
-      const filtered = filterNodeData(nodeWithIssues, { onlyUnhealthy: true });
+      const filtered = filterNodeData(nodeWithIssues);
 
-      expect(filtered.conditions).toHaveLength(2);
+      expect(filtered.conditions).toHaveLength(3);
       expect(filtered.conditions.map((c: any) => c.type)).toContain('Ready');
       expect(filtered.conditions.map((c: any) => c.type)).toContain('MemoryPressure');
+      expect(filtered.conditions.map((c: any) => c.type)).toContain('DiskPressure');
     });
   });
 
@@ -273,7 +270,6 @@ describe('k8sDataFilter', () => {
       expect(filtered.reason).toBe('OOMKilled');
       expect(filtered.message).toBe('Container killed due to OOM');
       expect(filtered.type).toBe('Warning');
-      expect(filtered.count).toBe(5);
       expect(filtered.involvedObject).toEqual({
         kind: 'Pod',
         name: 'my-pod',

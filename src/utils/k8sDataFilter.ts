@@ -115,12 +115,10 @@ function buildFilteredPod(
   conditions: PodCondition[],
   ownerReferences: OwnerReference[] | undefined
 ): FilteredPod {
-  const nodeName = pod.spec?.nodeName;
   return {
     ...getPodIdentity(pod),
     restarts,
     containers,
-    ...(nodeName && { nodeName }),
     ...(conditions.length > 0 && { conditions }),
     ...(ownerReferences && { ownerReferences })
   };
@@ -135,53 +133,19 @@ export function filterPodData(pod: any): FilteredPod {
   return buildFilteredPod(pod, containers, restarts, conditions, ownerReferences);
 }
 
-function isUnhealthyCondition(c: PodCondition): boolean {
-  if (c.type === 'Ready') return c.status !== 'True';
-  return c.status === 'True';
-}
-
-function filterNodeConditions(conditions: PodCondition[], onlyUnhealthy: boolean): PodCondition[] {
-  const mapped = conditions.map(mapCondition);
-  return onlyUnhealthy ? mapped.filter(isUnhealthyCondition) : mapped;
-}
-
-function mapTaints(taints: any[]): FilteredNode['taints'] {
-  return taints.map(t => ({
-    key: t.key,
-    effect: t.effect,
-    ...(t.value && { value: t.value })
-  }));
+function filterNodeConditions(conditions: PodCondition[]): PodCondition[] {
+  return conditions.map(mapCondition);
 }
 
 function getNodeConditions(node: any): PodCondition[] {
   return node.status?.conditions || [];
 }
 
-function getNodeTaints(node: any): FilteredNode['taints'] | undefined {
-  const taints = node.spec?.taints;
-  return taints?.length > 0 ? mapTaints(taints) : undefined;
-}
-
-function buildFilteredNode(
-  node: any,
-  conditions: PodCondition[],
-  taints: FilteredNode['taints'] | undefined
-): FilteredNode {
-  const capacity = node.status?.capacity;
-  const allocatable = node.status?.allocatable;
+export function filterNodeData(node: any): FilteredNode {
   return {
     name: node.metadata?.name || '',
-    conditions,
-    ...(capacity && { capacity }),
-    ...(allocatable && { allocatable }),
-    ...(taints && { taints })
+    conditions: filterNodeConditions(getNodeConditions(node))
   };
-}
-
-export function filterNodeData(node: any, options: FilterOptions = {}): FilteredNode {
-  const conditions = filterNodeConditions(getNodeConditions(node), !!options.onlyUnhealthy);
-  const taints = getNodeTaints(node);
-  return buildFilteredNode(node, conditions, taints);
 }
 
 export function filterEventData(event: any, options: FilterOptions = {}): FilteredEvent | null {
@@ -194,13 +158,10 @@ export function filterEventData(event: any, options: FilterOptions = {}): Filter
     reason: event.reason,
     message: event.message,
     type: event.type,
-    count: event.count,
     involvedObject: {
       kind: event.involvedObject?.kind,
       name: event.involvedObject?.name,
       ...(event.involvedObject?.namespace && { namespace: event.involvedObject.namespace })
-    },
-    ...(event.firstTimestamp && { firstTimestamp: event.firstTimestamp }),
-    ...(event.lastTimestamp && { lastTimestamp: event.lastTimestamp })
+    }
   };
 }
