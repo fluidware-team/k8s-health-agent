@@ -4,10 +4,12 @@
   "type": "commonjs",
   "private": true,
   "description": "Agent to check cluster health",
-  "main": "src/index.ts",
+  "main": "dist/src/index.js",
   "scripts": {
+    "build": "tsc",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
+    "start": "node dist/src/index.js",
     "start:dev": "ts-node src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
