@@ -47,6 +47,7 @@ export const readPodLogsTool = tool(
 // Tool to get pod metrics from metrics-server
 export const getPodMetricsTool = tool(
   async ({ namespace, podName }) => {
+    getLogger().info(`[tool] get_pod_metrics in ${namespace}${podName ? ` (pod: ${podName})` : ''}`);
     try {
       const metrics = await k8sMetricsClient.getPodMetrics(namespace);
 

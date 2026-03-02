@@ -100,11 +100,12 @@ function extractOwnerReferences(pod: any): OwnerReference[] | undefined {
   }));
 }
 
-function getPodIdentity(pod: any): { name: string; namespace: string; status: string } {
+function getPodIdentity(pod: any): { name: string; namespace: string; status: string; labels?: Record<string, string> } {
   return {
     name: pod.metadata?.name || '',
     namespace: pod.metadata?.namespace || 'default',
-    status: pod.status?.phase || 'Unknown'
+    status: pod.status?.phase || 'Unknown',
+    ...(pod.metadata?.labels && Object.keys(pod.metadata.labels).length > 0 && { labels: pod.metadata.labels })
   };
 }
 
@@ -158,6 +159,9 @@ export function filterEventData(event: any, options: FilterOptions = {}): Filter
     reason: event.reason,
     message: event.message,
     type: event.type,
+    ...(event.count && { count: event.count }),
+    ...(event.firstTimestamp && { firstTimestamp: event.firstTimestamp }),
+    ...(event.lastTimestamp && { lastTimestamp: event.lastTimestamp }),
     involvedObject: {
       kind: event.involvedObject?.kind,
       name: event.involvedObject?.name,

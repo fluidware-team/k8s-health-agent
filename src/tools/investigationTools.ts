@@ -1,5 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { getLogger } from '@fluidware-it/saddlebag';
 import { k8sCoreApi, k8sAppsApi } from '../cluster/k8sClient';
 import { extractK8sErrorMessage } from '../utils/k8sErrorUtils';
 
@@ -181,6 +182,7 @@ function buildWorkloadSpecLines(kind: string, name: string, namespace: string, s
 // Returns status conditions, replica/container states, and recent warning events.
 export const describeResourceTool = tool(
   async ({ kind, name, namespace }) => {
+    getLogger().info(`[tool] describe_resource: ${kind}/${name} in ${namespace}`);
     try {
       // Fetch the resource and events in parallel
       const eventsPromise = k8sCoreApi.listNamespacedEvent({ namespace });
@@ -272,6 +274,7 @@ export const describeResourceTool = tool(
 // env var names (never values), ports, probes, and volumes.
 export const getWorkloadSpecTool = tool(
   async ({ kind, name, namespace }) => {
+    getLogger().info(`[tool] get_workload_spec: ${kind}/${name} in ${namespace}`);
     try {
       let raw: any;
       switch (kind) {
@@ -331,6 +334,7 @@ function applyPrefix(items: any[], namePrefix?: string): any[] {
 // Useful for verifying that a referenced config or secret actually exists.
 export const listConfigsAndSecretsTool = tool(
   async ({ namespace, namePrefix }) => {
+    getLogger().info(`[tool] list_configmaps_and_secrets in ${namespace}${namePrefix ? ` (prefix: ${namePrefix})` : ''}`);
     try {
       const [cmRes, secretRes] = await Promise.all([
         k8sCoreApi.listNamespacedConfigMap({ namespace }),

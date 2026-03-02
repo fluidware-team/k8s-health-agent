@@ -1,7 +1,9 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { getLogger } from '@fluidware-it/saddlebag';
 import { k8sCoreApi } from '../cluster/k8sClient';
 import { filterPodData, filterNodeData, filterEventData } from '../utils/k8sDataFilter';
+import type { NamespaceConstraints } from '../types/triage';
 
 // Triage tools are "cheap" - they retrieve list data without heavy processing
 
@@ -44,6 +46,7 @@ export const listNodesTool = tool(
 // Tool to list events in a namespace
 export const listEventsTool = tool(
   async ({ namespace, objectName, includeNormal = false }) => {
+    getLogger().info(`[tool] list_events in ${namespace}${objectName ? ` (object: ${objectName})` : ''}`);
     try {
       const res = await k8sCoreApi.listNamespacedEvent({ namespace });
       let events = res.items;
@@ -75,6 +78,48 @@ export const listEventsTool = tool(
         .optional()
         .default(false)
         .describe('If true, includes Normal events (not just Warnings)')
+    })
+  }
+);
+
+// Tool to fetch ResourceQuota and LimitRange objects for a namespace.
+// Useful for diagnosing Pending pods (quota exhausted) and OOMKilled
+// (LimitRange defaults silently capping container memory).
+export const listNamespaceConstraintsTool = tool(
+  async ({ namespace }) => {
+    try {
+      const [quotaRes, limitRes] = await Promise.all([
+        k8sCoreApi.listNamespacedResourceQuota({ namespace }),
+        k8sCoreApi.listNamespacedLimitRange({ namespace })
+      ]);
+
+      const resourceQuotas = (quotaRes.items ?? []).map((rq: any) => ({
+        name: rq.metadata?.name ?? '',
+        hard: rq.status?.hard ?? {},
+        used: rq.status?.used ?? {}
+      }));
+
+      const limitRanges = (limitRes.items ?? []).map((lr: any) => ({
+        name: lr.metadata?.name ?? '',
+        limits: (lr.spec?.limits ?? []).map((l: any) => ({
+          type: l.type,
+          ...(l.default && { default: l.default }),
+          ...(l.max && { max: l.max })
+        }))
+      }));
+
+      const result: NamespaceConstraints = { resourceQuotas, limitRanges };
+      return JSON.stringify(result);
+    } catch (e) {
+      return `Error retrieving namespace constraints: ${JSON.stringify(e)}`;
+    }
+  },
+  {
+    name: 'list_namespace_constraints',
+    description:
+      'Lists ResourceQuota and LimitRange objects for a namespace. Useful for diagnosing Pending pods (quota exhausted) and OOMKilled pods (LimitRange default silently capping container memory).',
+    schema: z.object({
+      namespace: z.string().describe('The namespace to inspect')
     })
   }
 );

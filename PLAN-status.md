@@ -447,3 +447,127 @@
 
 - 107 tests passing (unchanged count — test logic updated, not added/removed)
 - Lint clean
+
+---
+
+## Phase 4: Investigation Depth & Intelligence [DONE]
+
+**Branch:** `feature/04-intelligence`
+
+### What was done
+
+**4.0a — Node status in analysis prompt**
+`buildAnalysisPrompt()` now includes `Node status: warning/critical` when `triageResult.nodeStatus !== 'healthy'`. Suppressed for healthy clusters.
+
+**4.0b — Confidence signal tags**
+Added to `SYSTEM_PROMPT`: instructs the LLM to tag each hypothesis with `[direct evidence]`, `[inferred]`, or `[speculative — no logs]`.
+
+**4.0c — Resource cross-reference guidance**
+Added to `SYSTEM_PROMPT`: for OOMKilled/HighRestartCount, explicitly instruct the agent to call both `get_workload_spec` and `get_pod_metrics` and compare limits vs usage.
+
+**4.1 — Log pre-processor** (`src/utils/logPreprocessor.ts`)
+- `deduplicateLines()` — collapses repeated lines with `[repeated Nx]`
+- `extractFirstErrorTimestamp()` — finds first ERROR/FATAL/Exception timestamp
+- `trimStackTrace()` — keeps top 3 + bottom 1 frame for long stack traces
+- `preprocessLogs()` — composes all three; prepends `<!-- first-error: <ts> -->` comment
+- Wired into `deepDiveNode.ts` before findings are appended
+
+**4.2 — ResourceQuota/LimitRange awareness**
+- Added `listNamespaceConstraintsTool` to `triageTools.ts` (fetches ResourceQuota + LimitRange)
+- Added `NamespaceConstraints` and `DependencyHint` interfaces to `triage.ts`
+- Added `namespaceConstraints` and `dependencyHints` fields to `DiagnosticState`
+- `triageNode` fetches constraints in parallel; graceful fallback on RBAC failure
+- `buildAnalysisPrompt()` renders a `## Namespace Constraints` section when present
+
+**4.3 — Cross-pod timestamp correlation** (`src/utils/timestampCorrelator.ts`)
+- Added `firstTimestamp`/`lastTimestamp` to `FilteredEvent` and `filterEventData()`
+- Added `eventsSummary: FilteredEvent[]` to `TriageResult`; populated in `analyzeTriageData()`
+- `correlatePodTimestamps()` groups issues by owner workload, compares first-event timestamps,
+  emits a note when multiple pods fail within a 5-minute window
+- Injected into `buildAnalysisPrompt()` as a `## Timing Correlations` section
+
+**4.4 — Two-stage chain-of-thought analysis**
+- Added `runEvidenceSummary()` — stage 1: per-issue evidence summary via plain `model.invoke` (no tools)
+- Modified `runWithReactAgent()` to accept optional `evidenceSummary` parameter, prepended to the agent message as `## Evidence Summary (Stage 1)`
+- Added `runTwoStageAnalysis()` — calls stage 1 then stage 2
+- `ANALYSIS_MAX_ITERATIONS=0` path unchanged (single invoke)
+
+**4.5 — Dependency / downstream victim inference** (`src/utils/dependencyInferrer.ts`)
+- Added `labels?: Record<string, string>` to `FilteredPod`; extracted in `filterPodData()`
+- `inferDependencies()` — fetches Services + Endpoints in parallel; emits a `DependencyHint` for each service that (a) matches a failing pod's labels and (b) has 0 ready endpoints
+- Graceful fallback (RBAC failure → empty hints)
+- `triageNode` calls `inferDependencies` after issue extraction; stores in state
+- `buildAnalysisPrompt()` renders a `## Dependency Hints` section when hints are present
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/types/k8s.ts` | Added `firstTimestamp`, `lastTimestamp`, `count` to `FilteredEvent`; `labels` to `FilteredPod` |
+| `src/types/triage.ts` | Added `eventsSummary` to `TriageResult`; new `NamespaceConstraints`, `DependencyHint`, updated `TriageData` |
+| `src/agents/state.ts` | Added `messages`, `namespaceConstraints`, `dependencyHints` fields |
+| `src/utils/k8sDataFilter.ts` | Extract `firstTimestamp`, `lastTimestamp`, `count` in `filterEventData`; extract `labels` in `filterPodData` |
+| `src/agents/nodes/analysisNode.ts` | `SYSTEM_PROMPT` (4.0b/c), `buildAnalysisPrompt` (4.0a, 4.2, 4.3, 4.5), two-stage analysis (4.4) |
+| `src/agents/nodes/deepDiveNode.ts` | Apply `preprocessLogs` to log findings |
+| `src/agents/nodes/triageNode.ts` | Fetch constraints + dependency inference; populate `eventsSummary` |
+| `src/tools/triageTools.ts` | Added `listNamespaceConstraintsTool` |
+| `src/utils/logPreprocessor.ts` | Created |
+| `src/utils/timestampCorrelator.ts` | Created |
+| `src/utils/dependencyInferrer.ts` | Created |
+| `tests/utils/logPreprocessor.test.ts` | Created — 14 tests |
+| `tests/utils/timestampCorrelator.test.ts` | Created — 6 tests |
+| `tests/utils/dependencyInferrer.test.ts` | Created — 5 tests |
+| `tests/tools/namespaceConstraintsTool.test.ts` | Created — 4 tests |
+| `tests/agents/nodes/analysisNode.test.ts` | Updated — 7 new tests, updated mocks for two-stage |
+
+### Test results
+
+- 168 tests passing (was 132 — added 36 new tests)
+- Build clean
+
+---
+
+## Phase 4 — Fixes: Tool logging + recursion fallback [DONE]
+
+**Branch:** `feature/04-intelligence` (continued)
+
+### What was done
+
+Three issues surfaced from a real Ollama run:
+
+**Tool call visibility**
+Added `getLogger().info('[tool] ...')` at the start of every investigation tool that was missing it:
+- `describeResourceTool`, `getWorkloadSpecTool`, `listConfigsAndSecretsTool` (investigationTools.ts)
+- `getPodMetricsTool` (deepDiveTools.ts)
+- `listEventsTool` (triageTools.ts) — also fixed missing `getLogger` import (caused build error)
+
+**Recursion limit fallback**
+`runTwoStageAnalysis()` now catches `GraphRecursionError` (or any error with "Recursion limit" in the message)
+and falls back to `runWithSingleInvoke(state, evidenceSummary)` — preserving the stage-1 evidence summary
+so the final output is still useful even when the ReAct agent exceeds its tool-call budget.
+
+**System prompt guardrails**
+Added explicit instructions to `SYSTEM_PROMPT`:
+- "Use at most 2-3 tool calls total, then produce your final analysis immediately. Do not loop."
+- "After calling tools, you MUST write your final analysis text. Never call a tool as your last action."
+
+**diagnosticGraph mock extended**
+`tests/agents/diagnosticGraph.test.ts` mock extended to cover all new parallel API calls:
+`listNamespacedResourceQuota`, `listNamespacedLimitRange`, `listNamespacedService`, `listNamespacedEndpoints`,
+plus `k8sAppsApi`, `k8sBatchApi`, `k8sMetricsClient`.
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/tools/investigationTools.ts` | Added `[tool]` info logs to all three tools |
+| `src/tools/deepDiveTools.ts` | Added `[tool]` info log to `getPodMetricsTool` |
+| `src/tools/triageTools.ts` | Added missing `getLogger` import; added `[tool]` info log to `listEventsTool` |
+| `src/agents/nodes/analysisNode.ts` | Added `isRecursionError()`, recursion catch + fallback in `runTwoStageAnalysis`, updated `runWithSingleInvoke` to accept optional `extraContext`, updated `SYSTEM_PROMPT` |
+| `tests/agents/nodes/analysisNode.test.ts` | Added recursion fallback test (1 new test) |
+| `tests/agents/diagnosticGraph.test.ts` | Extended mock to cover new API calls |
+
+### Test results
+
+- 169 tests passing (was 168 — added 1 new test)
+- Build clean

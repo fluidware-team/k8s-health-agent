@@ -14,7 +14,7 @@ vi.mock('../../../src/agents/modelProvider', () => ({
   getChatModel: () => ({ invoke: mockModelInvoke })
 }));
 
-import { analysisNode } from '../../../src/agents/nodes/analysisNode';
+import { analysisNode, SYSTEM_PROMPT } from '../../../src/agents/nodes/analysisNode';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import type { DiagnosticStateType } from '../../../src/agents/state';
 
@@ -23,6 +23,8 @@ function makeState(overrides: Partial<DiagnosticStateType> = {}): DiagnosticStat
     namespace: 'default',
     messages: [],
     triageResult: null,
+    namespaceConstraints: null,
+    dependencyHints: [],
     deepDiveFindings: [],
     llmAnalysis: '',
     issues: [],
@@ -44,7 +46,9 @@ const stateWithIssue = makeState({
 describe('analysisNode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: mock agent returns a final analysis message
+    // Stage 1 (evidence summary): simple model invoke
+    mockModelInvoke.mockResolvedValue({ content: 'Stage 1 evidence summary' });
+    // Stage 2: ReAct agent returns final analysis
     mockAgentInvoke.mockResolvedValue({
       messages: [{ content: '**Root cause:** DB connection refused' }]
     });
@@ -72,9 +76,12 @@ describe('analysisNode', () => {
     expect(mockAgentInvoke).not.toHaveBeenCalled();
   });
 
-  it('should use createReactAgent by default and return analysis', async () => {
+  it('should use createReactAgent by default and return analysis (two-stage)', async () => {
     const result = await analysisNode(stateWithIssue);
 
+    // Stage 1: evidence summary via model invoke
+    expect(mockModelInvoke).toHaveBeenCalledOnce();
+    // Stage 2: ReAct agent
     expect(createReactAgent).toHaveBeenCalledOnce();
     expect(mockAgentInvoke).toHaveBeenCalledOnce();
     expect(result.llmAnalysis).toContain('Root cause');
@@ -159,6 +166,7 @@ describe('analysisNode', () => {
 
   it('should fall back to single model.invoke when ANALYSIS_MAX_ITERATIONS=0', async () => {
     vi.stubEnv('ANALYSIS_MAX_ITERATIONS', '0');
+    // Single-invoke path uses mockModelInvoke only (no stage 1)
     mockModelInvoke.mockResolvedValue({ content: 'Fallback analysis' });
 
     const result = await analysisNode(stateWithIssue);
@@ -168,11 +176,114 @@ describe('analysisNode', () => {
     expect(result.llmAnalysis).toBe('Fallback analysis');
   });
 
-  it('should return empty analysis when the agent fails', async () => {
+  it('should return empty analysis when the agent fails with a non-recursion error', async () => {
     mockAgentInvoke.mockRejectedValue(new Error('API error'));
 
     const result = await analysisNode(stateWithIssue);
 
     expect(result.llmAnalysis).toBe('');
+  });
+
+  it('should fall back to single invoke when the agent hits the recursion limit', async () => {
+    const recursionError = new Error('Recursion limit of 7 reached without hitting a stop condition.');
+    recursionError.name = 'GraphRecursionError';
+    mockAgentInvoke.mockRejectedValue(recursionError);
+    // Stage 1 returns evidence summary; fallback single invoke returns final analysis
+    mockModelInvoke
+      .mockResolvedValueOnce({ content: 'Stage 1 evidence summary' }) // stage 1
+      .mockResolvedValueOnce({ content: 'Fallback analysis from single invoke' }); // fallback
+
+    const result = await analysisNode(stateWithIssue);
+
+    expect(result.llmAnalysis).toBe('Fallback analysis from single invoke');
+    // Single invoke should receive stage 1 evidence in the prompt
+    // calls[1][0] is the messages array; [1] is the HumanMessage (index 1 after SystemMessage)
+    const fallbackMessages = mockModelInvoke.mock.calls[1]![0] as any[];
+    const humanContent = fallbackMessages[1].content as string;
+    expect(humanContent).toContain('Evidence Summary (Stage 1)');
+  });
+
+  it('should include node status in prompt when degraded', async () => {
+    const state = makeState({
+      triageResult: {
+        issues: [{ podName: 'pod-1', namespace: 'ns', reason: 'OOMKilled', severity: 'critical' }],
+        healthyPods: [],
+        nodeStatus: 'warning',
+        eventsSummary: []
+      }
+    });
+
+    await analysisNode(state);
+
+    const userMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
+    expect(userMessage).toContain('Node status: warning');
+  });
+
+  it('should not include node status in prompt when healthy', async () => {
+    await analysisNode(stateWithIssue);
+
+    const userMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
+    expect(userMessage).not.toContain('Node status:');
+  });
+
+  it('SYSTEM_PROMPT should include confidence signal tags', () => {
+    expect(SYSTEM_PROMPT).toContain('[direct evidence]');
+    expect(SYSTEM_PROMPT).toContain('[inferred]');
+    expect(SYSTEM_PROMPT).toContain('[speculative');
+  });
+
+  it('SYSTEM_PROMPT should instruct to cross-reference resources for OOMKilled', () => {
+    expect(SYSTEM_PROMPT).toContain('OOMKilled');
+    expect(SYSTEM_PROMPT).toContain('get_workload_spec');
+    expect(SYSTEM_PROMPT).toContain('get_pod_metrics');
+  });
+
+  it('should include namespace constraints in the prompt when present', async () => {
+    const state = makeState({
+      triageResult: {
+        issues: [{ podName: 'pod-1', namespace: 'ns', reason: 'Pending', severity: 'warning' }],
+        healthyPods: [],
+        nodeStatus: 'healthy',
+        eventsSummary: []
+      },
+      namespaceConstraints: {
+        resourceQuotas: [{ name: 'compute-quota', hard: { 'requests.cpu': '4' }, used: { 'requests.cpu': '3.9' } }],
+        limitRanges: []
+      }
+    });
+
+    await analysisNode(state);
+
+    const userMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
+    expect(userMessage).toContain('Namespace Constraints');
+    expect(userMessage).toContain('compute-quota');
+  });
+
+  it('should include stage 1 evidence summary in the stage 2 agent message', async () => {
+    mockModelInvoke.mockResolvedValue({ content: 'Confirmed: OOMKilled by memory limit' });
+
+    await analysisNode(stateWithIssue);
+
+    const agentMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
+    expect(agentMessage).toContain('Evidence Summary (Stage 1)');
+    expect(agentMessage).toContain('Confirmed: OOMKilled by memory limit');
+  });
+
+  it('should include dependency hints in the prompt when present', async () => {
+    const state = makeState({
+      triageResult: {
+        issues: [{ podName: 'gw-abc', namespace: 'ns', reason: 'CrashLoopBackOff', severity: 'critical' }],
+        healthyPods: [],
+        nodeStatus: 'healthy',
+        eventsSummary: []
+      },
+      dependencyHints: [{ workload: 'Deployment/gateway', hint: 'Service/rabbitmq has 0 ready endpoints' }]
+    });
+
+    await analysisNode(state);
+
+    const userMessage = mockAgentInvoke.mock.calls[0]![0].messages[0].content;
+    expect(userMessage).toContain('Dependency Hints');
+    expect(userMessage).toContain('rabbitmq');
   });
 });
