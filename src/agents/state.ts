@@ -1,6 +1,6 @@
 import { Annotation } from '@langchain/langgraph';
 import type { DiagnosticIssue } from '../types/report';
-import type { TriageIssue, TriageResult } from '../types/triage';
+import type { TriageIssue, TriageResult, NamespaceConstraints, DependencyHint } from '../types/triage';
 
 export type { TriageIssue, TriageResult };
 
@@ -11,10 +11,28 @@ export const DiagnosticState = Annotation.Root({
     reducer: (_, y) => y
   }),
 
+  // LangGraph message history (unused by nodes, kept for graph compatibility)
+  messages: Annotation<any[]>({
+    reducer: (x, y) => x.concat(y),
+    default: () => []
+  }),
+
   // Triage phase results
   triageResult: Annotation<TriageResult | null>({
     reducer: (_, y) => y,
     default: () => null
+  }),
+
+  // Namespace ResourceQuota and LimitRange constraints (fetched during triage)
+  namespaceConstraints: Annotation<NamespaceConstraints | null>({
+    reducer: (_, y) => y,
+    default: () => null
+  }),
+
+  // Service dependency hints inferred from label matching (fetched during triage)
+  dependencyHints: Annotation<DependencyHint[]>({
+    reducer: (_, y) => y,
+    default: () => []
   }),
 
   // Deep dive findings

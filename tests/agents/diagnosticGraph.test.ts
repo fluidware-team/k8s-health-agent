@@ -6,7 +6,21 @@ vi.mock('../../src/cluster/k8sClient', () => ({
     listNamespacedPod: vi.fn(),
     listNode: vi.fn(),
     listNamespacedEvent: vi.fn(),
-    readNamespacedPodLog: vi.fn()
+    readNamespacedPodLog: vi.fn(),
+    listNamespacedResourceQuota: vi.fn().mockResolvedValue({ items: [] }),
+    listNamespacedLimitRange: vi.fn().mockResolvedValue({ items: [] }),
+    listNamespacedService: vi.fn().mockResolvedValue({ items: [] }),
+    listNamespacedEndpoints: vi.fn().mockResolvedValue({ items: [] })
+  },
+  k8sAppsApi: {
+    listNamespacedReplicaSet: vi.fn().mockResolvedValue({ items: [] }),
+    listNamespacedDeployment: vi.fn().mockResolvedValue({ items: [] })
+  },
+  k8sBatchApi: {
+    listNamespacedJob: vi.fn().mockResolvedValue({ items: [] })
+  },
+  k8sMetricsClient: {
+    getPodMetrics: vi.fn().mockResolvedValue({ items: [] })
   }
 }));
 

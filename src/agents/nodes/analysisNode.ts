@@ -3,6 +3,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { getChatModel } from '../modelProvider';
 import { describeResourceTool, getWorkloadSpecTool, listConfigsAndSecretsTool } from '../../tools/investigationTools';
+import { correlatePodTimestamps } from '../../utils/timestampCorrelator';
 import { readPodLogsTool, getPodMetricsTool } from '../../tools/deepDiveTools';
 import { listEventsTool } from '../../tools/triageTools';
 import type { DiagnosticStateType } from '../state';
@@ -21,7 +22,7 @@ const INVESTIGATION_TOOLS = [
   listEventsTool
 ];
 
-const SYSTEM_PROMPT = `You are a Kubernetes diagnostic expert with access to investigation tools.
+export const SYSTEM_PROMPT = `You are a Kubernetes diagnostic expert with access to investigation tools.
 You receive triage data and pod logs from a cluster namespace.
 
 Use the tools only when the provided data is insufficient to diagnose an issue. Prefer concise analysis.
@@ -33,8 +34,12 @@ For each issue (or group of related pods), provide:
 Rules:
 - Be concise. No filler.
 - Base your analysis on actual data.
+- Use at most 2-3 tool calls total, then produce your final analysis immediately. Do not loop.
 - If no logs are available for an issue, consider using read_pod_logs or describe_resource.
-- Group related pods (same deployment/job) together in your analysis.`;
+- Group related pods (same deployment/job) together in your analysis.
+- For OOMKilled or HighRestartCount issues, always call both get_workload_spec (to read memory limits) and get_pod_metrics (to read actual usage), then compare limits against usage.
+- Tag each hypothesis with one of: [direct evidence] (log/metric confirms it), [inferred] (pattern matches but not directly observed), or [speculative — no logs] (no logs available for this pod/container).
+- After calling tools, you MUST write your final analysis text. Never call a tool as your last action.`;
 
 function getMaxIterations(): number {
   // eslint-disable-next-line n/no-process-env
@@ -46,10 +51,15 @@ function getMaxIterations(): number {
 
 // Build a concise prompt with triage results and deep-dive findings
 function buildAnalysisPrompt(state: DiagnosticStateType): string {
-  const { namespace, triageResult, deepDiveFindings } = state;
+  const { namespace, triageResult, deepDiveFindings, namespaceConstraints, dependencyHints } = state;
   const lines: string[] = [];
 
   lines.push(`Namespace: ${namespace}`);
+
+  // Include node status when degraded — helps correlate pod OOMKills with node memory pressure
+  if (triageResult && triageResult.nodeStatus !== 'healthy') {
+    lines.push(`Node status: ${triageResult.nodeStatus}`);
+  }
   lines.push('');
 
   // Triage issues — grouped by owner workload when available
@@ -78,6 +88,42 @@ function buildAnalysisPrompt(state: DiagnosticStateType): string {
     lines.push('');
   }
 
+  // Cross-pod timestamp correlation
+  if (triageResult && triageResult.issues.length > 1 && triageResult.eventsSummary.length > 0) {
+    const correlationNotes = correlatePodTimestamps(triageResult.issues, triageResult.eventsSummary);
+    if (correlationNotes.length > 0) {
+      lines.push('## Timing Correlations');
+      for (const n of correlationNotes) {
+        lines.push(`- ${n.workload}: ${n.note}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Namespace ResourceQuota and LimitRange constraints
+  if (namespaceConstraints) {
+    const { resourceQuotas, limitRanges } = namespaceConstraints;
+    if (resourceQuotas.length > 0 || limitRanges.length > 0) {
+      lines.push('## Namespace Constraints');
+      for (const rq of resourceQuotas) {
+        lines.push(`- ResourceQuota/${rq.name}: hard=${JSON.stringify(rq.hard)}, used=${JSON.stringify(rq.used)}`);
+      }
+      for (const lr of limitRanges) {
+        lines.push(`- LimitRange/${lr.name}: ${JSON.stringify(lr.limits)}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Service dependency hints
+  if (dependencyHints.length > 0) {
+    lines.push('## Dependency Hints');
+    for (const h of dependencyHints) {
+      lines.push(`- ${h.workload}: ${h.hint}`);
+    }
+    lines.push('');
+  }
+
   // Deep-dive findings (logs and metrics)
   if (deepDiveFindings.length > 0) {
     lines.push('## Deep-Dive Findings');
@@ -91,7 +137,26 @@ function extractContent(message: any): string {
   return typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content ?? '');
 }
 
-async function runWithReactAgent(state: DiagnosticStateType, maxIterations: number): Promise<string> {
+const EVIDENCE_SUMMARY_PROMPT = `You are a Kubernetes log analyst. For each issue group below, produce a concise evidence summary:
+- Confirmed: what logs/metrics directly show
+- Missing: what information is absent
+- Ambiguous: what could be interpreted multiple ways
+
+Be terse. Format per group:
+### <Workload>: <Reason>
+- Confirmed: ...
+- Missing: ...
+- Ambiguous: ...`;
+
+async function runEvidenceSummary(state: DiagnosticStateType): Promise<string> {
+  const response = await getChatModel().invoke([
+    new SystemMessage(EVIDENCE_SUMMARY_PROMPT),
+    new HumanMessage(buildAnalysisPrompt(state))
+  ]);
+  return extractContent(response);
+}
+
+async function runWithReactAgent(state: DiagnosticStateType, maxIterations: number, evidenceSummary?: string): Promise<string> {
   const agent = createReactAgent({
     llm: getChatModel(),
     tools: INVESTIGATION_TOOLS,
@@ -100,17 +165,45 @@ async function runWithReactAgent(state: DiagnosticStateType, maxIterations: numb
 
   // Each iteration = agent node + tools node = 2 steps; +1 for the final answer step
   const recursionLimit = maxIterations * 2 + 1;
-  const result = await agent.invoke({ messages: [new HumanMessage(buildAnalysisPrompt(state))] }, { recursionLimit });
+  const basePrompt = buildAnalysisPrompt(state);
+  const promptContent = evidenceSummary
+    ? `${basePrompt}\n\n## Evidence Summary (Stage 1)\n${evidenceSummary}`
+    : basePrompt;
+
+  const result = await agent.invoke({ messages: [new HumanMessage(promptContent)] }, { recursionLimit });
 
   return extractContent(result.messages[result.messages.length - 1]);
 }
 
-async function runWithSingleInvoke(state: DiagnosticStateType): Promise<string> {
+async function runTwoStageAnalysis(state: DiagnosticStateType, maxIterations: number): Promise<string> {
+  const evidenceSummary = await runEvidenceSummary(state);
+  try {
+    return await runWithReactAgent(state, maxIterations, evidenceSummary);
+  } catch (error) {
+    if (isRecursionError(error)) {
+      // The agent exhausted its tool-call budget without producing a final answer.
+      // Fall back to a single LLM invoke with all gathered context (stage 1 + triage data).
+      logger.warn('ReAct agent hit recursion limit — falling back to single invoke with stage 1 context');
+      return runWithSingleInvoke(state, evidenceSummary);
+    }
+    throw error;
+  }
+}
+
+async function runWithSingleInvoke(state: DiagnosticStateType, extraContext?: string): Promise<string> {
+  const basePrompt = buildAnalysisPrompt(state);
+  const promptContent = extraContext
+    ? `${basePrompt}\n\n## Evidence Summary (Stage 1)\n${extraContext}`
+    : basePrompt;
   const response = await getChatModel().invoke([
     new SystemMessage(SYSTEM_PROMPT),
-    new HumanMessage(buildAnalysisPrompt(state))
+    new HumanMessage(promptContent)
   ]);
   return extractContent(response);
+}
+
+function isRecursionError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'GraphRecursionError' || error.message.includes('Recursion limit'));
 }
 
 export async function analysisNode(state: DiagnosticStateType): Promise<Partial<DiagnosticStateType>> {
@@ -126,7 +219,7 @@ export async function analysisNode(state: DiagnosticStateType): Promise<Partial<
   try {
     const maxIterations = getMaxIterations();
     const analysis =
-      maxIterations === 0 ? await runWithSingleInvoke(state) : await runWithReactAgent(state, maxIterations);
+      maxIterations === 0 ? await runWithSingleInvoke(state) : await runTwoStageAnalysis(state, maxIterations);
 
     logger.info('LLM analysis complete');
     return { llmAnalysis: analysis };

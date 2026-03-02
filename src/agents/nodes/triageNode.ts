@@ -1,8 +1,10 @@
 import { getLogger } from '@fluidware-it/saddlebag';
-import { listPodsTool, listNodesTool, listEventsTool } from '../../tools/triageTools';
+import { listPodsTool, listNodesTool, listEventsTool, listNamespaceConstraintsTool } from '../../tools/triageTools';
 import type { TriageIssue, TriageResult, DiagnosticStateType } from '../state';
 import type { FilteredPod, FilteredNode, FilteredEvent, TriageData } from '../../types';
+import type { NamespaceConstraints } from '../../types/triage';
 import { buildOwnerMap, resolveOwner, type OwnerMap } from '../../utils/ownerResolver';
+import { inferDependencies, type FailingPodInfo } from '../../utils/dependencyInferrer';
 
 const logger = getLogger();
 
@@ -178,7 +180,8 @@ export function analyzeTriageData(
   const triageResult: TriageResult = {
     issues,
     healthyPods,
-    nodeStatus
+    nodeStatus,
+    eventsSummary: data.events
   };
 
   // Need deep dive if there are critical or warning issues (info-level batch failures do not need it)
@@ -191,12 +194,13 @@ export function analyzeTriageData(
 export async function triageNode(state: DiagnosticStateType): Promise<Partial<DiagnosticStateType>> {
   const namespace = state.namespace;
 
-  // Use the tools to gather data, fetch owner references in parallel
-  const [podsResult, nodesResult, eventsResult, ownerMap] = await Promise.all([
+  // Use the tools to gather data; fetch owner references and namespace constraints in parallel
+  const [podsResult, nodesResult, eventsResult, ownerMap, constraintsResult] = await Promise.all([
     listPodsTool.invoke({ namespace }),
     listNodesTool.invoke({}),
     listEventsTool.invoke({ namespace }),
-    buildOwnerMap(namespace)
+    buildOwnerMap(namespace),
+    listNamespaceConstraintsTool.invoke({ namespace })
   ]);
 
   // Parse results — track which API calls failed
@@ -237,7 +241,8 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
         }
       ],
       healthyPods: [],
-      nodeStatus: 'critical'
+      nodeStatus: 'critical',
+      eventsSummary: []
     };
     return { triageResult, needsDeepDive: false };
   }
@@ -249,8 +254,27 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
 
   const { triageResult, needsDeepDive } = analyzeTriageData({ pods, nodes, events }, ownerMap);
 
+  // Parse namespace constraints — non-fatal if RBAC denies or API fails
+  let namespaceConstraints: NamespaceConstraints | null = null;
+  try {
+    const parsed = JSON.parse(constraintsResult as string);
+    if (parsed.resourceQuotas !== undefined) {
+      namespaceConstraints = parsed as NamespaceConstraints;
+    }
+  } catch {
+    logger.warn('Could not parse namespace constraints');
+  }
+
+  // Infer service dependency hints from failing pod labels vs Service selectors
+  const failingPodInfos: FailingPodInfo[] = pods
+    .filter(p => triageResult.issues.some(i => i.podName === p.name))
+    .map(p => ({ name: p.name, labels: p.labels ?? {} }));
+  const dependencyHints = await inferDependencies(namespace, failingPodInfos);
+
   return {
     triageResult,
-    needsDeepDive
+    needsDeepDive,
+    namespaceConstraints,
+    dependencyHints
   };
 }

@@ -44,6 +44,7 @@ export interface FilteredPod {
   namespace: string;
   status: string;
   restarts: number;
+  labels?: Record<string, string>;
   containers: FilteredContainer[];
   conditions?: PodCondition[];
   ownerReferences?: OwnerReference[];
@@ -58,6 +59,9 @@ export interface FilteredEvent {
   reason: string;
   message: string;
   type: string;
+  count?: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
   involvedObject: {
     kind: string;
     name: string;

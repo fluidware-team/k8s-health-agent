@@ -1,4 +1,5 @@
 import { readPodLogsTool, getPodMetricsTool } from '../../tools/deepDiveTools';
+import { preprocessLogs } from '../../utils/logPreprocessor';
 import type { TriageIssue, DiagnosticStateType } from '../state';
 import { getLogger } from '@fluidware-it/saddlebag';
 
@@ -49,6 +50,7 @@ async function investigateIssue(issue: TriageIssue, namespace: string): Promise<
     ]);
 
     const metricsSection = formatMetricsSection(metricsResult as string | null);
+    const processedLogs = preprocessLogs(logs as string);
 
     return `
 ## Investigation: ${issue.podName}
@@ -58,7 +60,7 @@ async function investigateIssue(issue: TriageIssue, namespace: string): Promise<
 ${metricsSection}
 ### Logs:
 \`\`\`
-${logs}
+${processedLogs}
 \`\`\`
 `;
   } catch (error: any) {
