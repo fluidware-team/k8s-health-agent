@@ -1,9 +1,10 @@
 import type { DiagnosticIssue, DiagnosticReport } from '../types/report';
 import { IssueSeverity } from '../types/report';
+import type { SnapshotDiff } from '../analysis/trendAnalyzer';
 
 // Extract the reason prefix from a DiagnosticIssue title.
 // Titles follow the convention "Reason: ResourceLabel" or "Reason: ResourceLabel (N pods)".
-function extractReason(title: string): string {
+export function extractReason(title: string): string {
   const colonIndex = title.indexOf(':');
   return colonIndex !== -1 ? title.slice(0, colonIndex).trim() : title;
 }
@@ -118,7 +119,44 @@ function formatOverviewTable(issues: DiagnosticIssue[]): string {
   return lines.join('\n');
 }
 
-export function formatReport(report: DiagnosticReport): string {
+function formatTrendSection(diff: SnapshotDiff): string {
+  const lines: string[] = [];
+  const scoreDelta = diff.healthScore - diff.previousHealthScore;
+  const deltaStr = scoreDelta >= 0 ? `+${scoreDelta}` : `${scoreDelta}`;
+
+  lines.push('## Changes Since Last Run');
+  lines.push('');
+  lines.push(`**Health score:** ${diff.healthScore}/100 (${deltaStr} vs ${diff.previousTimestamp})`);
+
+  if (diff.newIssues.length > 0) {
+    lines.push('');
+    lines.push(`**New (${diff.newIssues.length}):**`);
+    for (const i of diff.newIssues) lines.push(`- [${i.severity.toUpperCase()}] ${i.title}`);
+  }
+
+  if (diff.worsenedIssues.length > 0) {
+    lines.push('');
+    lines.push(`**Worsened (${diff.worsenedIssues.length}):**`);
+    for (const i of diff.worsenedIssues) lines.push(`- [${i.severity.toUpperCase()}] ${i.title}`);
+  }
+
+  if (diff.resolvedIssues.length > 0) {
+    lines.push('');
+    lines.push(`**Resolved (${diff.resolvedIssues.length}):**`);
+    for (const i of diff.resolvedIssues) lines.push(`- ${i.title}`);
+  }
+
+  const noChanges = diff.newIssues.length === 0 && diff.worsenedIssues.length === 0 && diff.resolvedIssues.length === 0;
+  if (noChanges) {
+    lines.push('');
+    const message = diff.healthScore === 100 ? 'Namespace remains healthy.' : 'Same issues as last run.';
+    lines.push(message);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatReport(report: DiagnosticReport, trendDiff?: SnapshotDiff | null): string {
   const lines: string[] = [];
 
   // Header
@@ -129,6 +167,14 @@ export function formatReport(report: DiagnosticReport): string {
   lines.push(`**Summary:** ${report.summary}`);
   lines.push('');
   lines.push('---');
+
+  // Trend section — shown before the issue details when a previous run exists
+  if (trendDiff) {
+    lines.push('');
+    lines.push(formatTrendSection(trendDiff));
+    lines.push('');
+    lines.push('---');
+  }
 
   // Collapse issues that share the same reason within each severity group
   const collapsedIssues = collapseRepeatedIssues(report.issues);
