@@ -2,7 +2,9 @@ import type { TriageIssue, DiagnosticStateType } from '../state';
 import { IssueSeverity, type DiagnosticIssue, type DiagnosticReport } from '../../types/report';
 import type { SummaryInput } from '../../types/summary';
 import { formatReport } from '../../utils/reportFormatter';
-import { saveSnapshot } from '../../persistence/snapshotStore';
+import { saveSnapshot, listSnapshots, loadSnapshot } from '../../persistence/snapshotStore';
+import { diffSnapshots, type SnapshotDiff } from '../../analysis/trendAnalyzer';
+import { getLogger } from '@fluidware-it/saddlebag';
 
 // Map triage severity to report severity
 function mapSeverity(severity: 'critical' | 'warning' | 'info'): IssueSeverity {
@@ -227,6 +229,19 @@ export function buildDiagnosticReport(input: SummaryInput): DiagnosticReport {
   };
 }
 
+// Load the previous snapshot for the namespace and compute a trend diff (non-fatal).
+async function loadTrendDiff(namespace: string, currentReport: DiagnosticReport): Promise<SnapshotDiff | null> {
+  try {
+    const snapshots = await listSnapshots(namespace);
+    if (snapshots.length === 0) return null;
+    const previous = await loadSnapshot(snapshots[snapshots.length - 1]!);
+    return diffSnapshots(previous, currentReport);
+  } catch {
+    getLogger().warn('Could not load previous snapshot for trend analysis');
+    return null;
+  }
+}
+
 // The actual node function for LangGraph
 export async function summaryNode(state: DiagnosticStateType): Promise<Partial<DiagnosticStateType>> {
   const report = buildDiagnosticReport({
@@ -236,8 +251,11 @@ export async function summaryNode(state: DiagnosticStateType): Promise<Partial<D
     llmAnalysis: state.llmAnalysis
   });
 
+  // Load previous snapshot and compute trend diff before saving the current one
+  const trendDiff = await loadTrendDiff(state.namespace, report);
+
   // Format the report as markdown
-  const formattedReport = formatReport(report);
+  const formattedReport = formatReport(report, trendDiff);
 
   // Log the formatted report
   // eslint-disable-next-line no-console

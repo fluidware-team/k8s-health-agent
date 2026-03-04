@@ -600,3 +600,33 @@ plus `k8sAppsApi`, `k8sBatchApi`, `k8sMetricsClient`.
 
 - 178 tests passing (was 169 — added 9 new tests)
 - Build clean
+
+---
+
+## Step 6.1: Trend Analysis [DONE]
+
+**Branch:** `feature/06-trends-watch`
+
+### What was done
+
+- Created `src/analysis/trendAnalyzer.ts`:
+  - `computeHealthScore(report)` — 0-100 score; deducts 30/critical, 10/warning, 2/info; floors at 0
+  - `diffSnapshots(previous, current)` — classifies issues as new, resolved, or worsened (severity escalation); unchanged issues omitted
+  - `SnapshotDiff` and `IssueDiff` types
+- Added `loadTrendDiff()` helper in `summaryNode.ts` — loads most recent previous snapshot for the namespace, computes diff; non-fatal on any error
+- Updated `formatReport(report, trendDiff?)` in `reportFormatter.ts` — renders "Changes Since Last Run" section with health score delta, new/worsened/resolved lists; section skipped on first run
+- LLM prompt injection skipped (diff is only available after issues are built in summaryNode, which runs after analysisNode)
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/analysis/trendAnalyzer.ts` | Created |
+| `src/agents/nodes/summaryNode.ts` | Modified — `loadTrendDiff`, passes diff to `formatReport` |
+| `src/utils/reportFormatter.ts` | Modified — `formatTrendSection`, updated `formatReport` signature |
+| `tests/analysis/trendAnalyzer.test.ts` | Created — 12 tests |
+
+### Test results
+
+- 191 tests passing (was 179 — added 12 new tests)
+- Build clean
