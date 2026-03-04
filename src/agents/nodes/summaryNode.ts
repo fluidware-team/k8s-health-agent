@@ -2,6 +2,7 @@ import type { TriageIssue, DiagnosticStateType } from '../state';
 import { IssueSeverity, type DiagnosticIssue, type DiagnosticReport } from '../../types/report';
 import type { SummaryInput } from '../../types/summary';
 import { formatReport } from '../../utils/reportFormatter';
+import { saveSnapshot } from '../../persistence/snapshotStore';
 
 // Map triage severity to report severity
 function mapSeverity(severity: 'critical' | 'warning' | 'info'): IssueSeverity {
@@ -241,6 +242,9 @@ export async function summaryNode(state: DiagnosticStateType): Promise<Partial<D
   // Log the formatted report
   // eslint-disable-next-line no-console
   console.log(formattedReport);
+
+  // Persist snapshot (silent on failure — never crashes a completed run)
+  await saveSnapshot(report);
 
   return {
     issues: report.issues

@@ -571,3 +571,32 @@ plus `k8sAppsApi`, `k8sBatchApi`, `k8sMetricsClient`.
 
 - 169 tests passing (was 168 — added 1 new test)
 - Build clean
+
+---
+
+## Step 5.2: Run Snapshots [DONE]
+
+**Branch:** `feature/04-intelligence` (continued — 5.1 skipped)
+
+### What was done
+
+- Created `src/persistence/snapshotStore.ts` with three functions:
+  - `saveSnapshot(report, context?)` — serializes `DiagnosticReport` to `~/.k8s-health-agent/<context>/<namespace>/<timestamp>.json`; returns path or null on failure (silent)
+  - `listSnapshots(namespace, context?)` — returns sorted list of snapshot paths; empty array if dir missing
+  - `loadSnapshot(path)` — reads and parses a snapshot file
+- Timestamp sanitized for filenames: colons replaced with dashes, milliseconds stripped
+- `context` defaults to `'default'` (5.1 skipped)
+- Wired `saveSnapshot` into `summaryNode.ts` after report is printed; failures logged as warnings, never crash the run
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/persistence/snapshotStore.ts` | Created |
+| `src/agents/nodes/summaryNode.ts` | Modified — calls `saveSnapshot(report)` before returning |
+| `tests/persistence/snapshotStore.test.ts` | Created — 9 tests |
+
+### Test results
+
+- 178 tests passing (was 169 — added 9 new tests)
+- Build clean
