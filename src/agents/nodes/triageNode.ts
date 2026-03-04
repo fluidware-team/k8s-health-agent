@@ -266,8 +266,9 @@ export async function triageNode(state: DiagnosticStateType): Promise<Partial<Di
   }
 
   // Infer service dependency hints from failing pod labels vs Service selectors
+  const failingPodNames = new Set(triageResult.issues.map(i => i.podName));
   const failingPodInfos: FailingPodInfo[] = pods
-    .filter(p => triageResult.issues.some(i => i.podName === p.name))
+    .filter(p => failingPodNames.has(p.name))
     .map(p => ({ name: p.name, labels: p.labels ?? {} }));
   const dependencyHints = await inferDependencies(namespace, failingPodInfos);
 

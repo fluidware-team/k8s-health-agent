@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getLogger } from '@fluidware-it/saddlebag';
 import { k8sCoreApi } from '../cluster/k8sClient';
 import { filterPodData, filterNodeData, filterEventData } from '../utils/k8sDataFilter';
+import { extractK8sErrorMessage } from '../utils/k8sErrorUtils';
 import type { NamespaceConstraints } from '../types/triage';
 
 // Triage tools are "cheap" - they retrieve list data without heavy processing
@@ -14,7 +15,7 @@ export const listPodsTool = tool(
       const res = await k8sCoreApi.listNamespacedPod({ namespace });
       return JSON.stringify(res.items.map(filterPodData));
     } catch (e) {
-      return `Error retrieving pods: ${JSON.stringify(e)}`;
+      return `Error retrieving pods: ${extractK8sErrorMessage(e, 'list_pods')}`;
     }
   },
   {
@@ -33,7 +34,7 @@ export const listNodesTool = tool(
       const res = await k8sCoreApi.listNode();
       return JSON.stringify(res.items.map(n => filterNodeData(n)));
     } catch (e) {
-      return `Error retrieving nodes: ${JSON.stringify(e)}`;
+      return `Error retrieving nodes: ${extractK8sErrorMessage(e, 'list_nodes')}`;
     }
   },
   {
@@ -63,7 +64,7 @@ export const listEventsTool = tool(
 
       return JSON.stringify(filtered);
     } catch (e) {
-      return `Error retrieving events: ${JSON.stringify(e)}`;
+      return `Error retrieving events: ${extractK8sErrorMessage(e, 'list_events')}`;
     }
   },
   {
@@ -111,7 +112,7 @@ export const listNamespaceConstraintsTool = tool(
       const result: NamespaceConstraints = { resourceQuotas, limitRanges };
       return JSON.stringify(result);
     } catch (e) {
-      return `Error retrieving namespace constraints: ${JSON.stringify(e)}`;
+      return `Error retrieving namespace constraints: ${extractK8sErrorMessage(e, 'list_namespace_constraints')}`;
     }
   },
   {

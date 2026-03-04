@@ -148,15 +148,15 @@ Be terse. Format per group:
 - Missing: ...
 - Ambiguous: ...`;
 
-async function runEvidenceSummary(state: DiagnosticStateType): Promise<string> {
+async function runEvidenceSummary(prompt: string): Promise<string> {
   const response = await getChatModel().invoke([
     new SystemMessage(EVIDENCE_SUMMARY_PROMPT),
-    new HumanMessage(buildAnalysisPrompt(state))
+    new HumanMessage(prompt)
   ]);
   return extractContent(response);
 }
 
-async function runWithReactAgent(state: DiagnosticStateType, maxIterations: number, evidenceSummary?: string): Promise<string> {
+async function runWithReactAgent(prompt: string, maxIterations: number, evidenceSummary?: string): Promise<string> {
   const agent = createReactAgent({
     llm: getChatModel(),
     tools: INVESTIGATION_TOOLS,
@@ -165,36 +165,34 @@ async function runWithReactAgent(state: DiagnosticStateType, maxIterations: numb
 
   // Each iteration = agent node + tools node = 2 steps; +1 for the final answer step
   const recursionLimit = maxIterations * 2 + 1;
-  const basePrompt = buildAnalysisPrompt(state);
   const promptContent = evidenceSummary
-    ? `${basePrompt}\n\n## Evidence Summary (Stage 1)\n${evidenceSummary}`
-    : basePrompt;
+    ? `${prompt}\n\n## Evidence Summary (Stage 1)\n${evidenceSummary}`
+    : prompt;
 
   const result = await agent.invoke({ messages: [new HumanMessage(promptContent)] }, { recursionLimit });
 
   return extractContent(result.messages[result.messages.length - 1]);
 }
 
-async function runTwoStageAnalysis(state: DiagnosticStateType, maxIterations: number): Promise<string> {
-  const evidenceSummary = await runEvidenceSummary(state);
+async function runTwoStageAnalysis(prompt: string, maxIterations: number): Promise<string> {
+  const evidenceSummary = await runEvidenceSummary(prompt);
   try {
-    return await runWithReactAgent(state, maxIterations, evidenceSummary);
+    return await runWithReactAgent(prompt, maxIterations, evidenceSummary);
   } catch (error) {
     if (isRecursionError(error)) {
       // The agent exhausted its tool-call budget without producing a final answer.
       // Fall back to a single LLM invoke with all gathered context (stage 1 + triage data).
       logger.warn('ReAct agent hit recursion limit — falling back to single invoke with stage 1 context');
-      return runWithSingleInvoke(state, evidenceSummary);
+      return runWithSingleInvoke(prompt, evidenceSummary);
     }
     throw error;
   }
 }
 
-async function runWithSingleInvoke(state: DiagnosticStateType, extraContext?: string): Promise<string> {
-  const basePrompt = buildAnalysisPrompt(state);
+async function runWithSingleInvoke(prompt: string, extraContext?: string): Promise<string> {
   const promptContent = extraContext
-    ? `${basePrompt}\n\n## Evidence Summary (Stage 1)\n${extraContext}`
-    : basePrompt;
+    ? `${prompt}\n\n## Evidence Summary (Stage 1)\n${extraContext}`
+    : prompt;
   const response = await getChatModel().invoke([
     new SystemMessage(SYSTEM_PROMPT),
     new HumanMessage(promptContent)
@@ -218,8 +216,9 @@ export async function analysisNode(state: DiagnosticStateType): Promise<Partial<
 
   try {
     const maxIterations = getMaxIterations();
+    const prompt = buildAnalysisPrompt(state);
     const analysis =
-      maxIterations === 0 ? await runWithSingleInvoke(state) : await runTwoStageAnalysis(state, maxIterations);
+      maxIterations === 0 ? await runWithSingleInvoke(prompt) : await runTwoStageAnalysis(prompt, maxIterations);
 
     logger.info('LLM analysis complete');
     return { llmAnalysis: analysis };
