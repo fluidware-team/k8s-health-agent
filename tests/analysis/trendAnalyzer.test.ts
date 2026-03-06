@@ -90,9 +90,6 @@ describe('diffSnapshots', () => {
   });
 
   it('should identify worsened issues when severity escalates', () => {
-    const previousIssue = { ...WARNING_ISSUE, resource: { ...WARNING_ISSUE.resource, name: 'gateway' }, title: 'HighRestartCount: Deployment/gateway' };
-    const currentIssue = { ...CRITICAL_ISSUE, resource: { ...CRITICAL_ISSUE.resource, name: 'gateway' }, title: 'CrashLoopBackOff: Deployment/gateway' };
-
     // Same workload (Deployment/gateway), but reason changed and severity escalated
     // Actually worsened is about same key having higher severity.
     // Let's use same title/resource but upgraded severity:

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { preprocessLogs, deduplicateLines, extractFirstErrorTimestamp, trimStackTrace } from '../../src/utils/logPreprocessor';
+import {
+  preprocessLogs,
+  deduplicateLines,
+  extractFirstErrorTimestamp,
+  trimStackTrace
+} from '../../src/utils/logPreprocessor';
 
 describe('deduplicateLines', () => {
   it('should collapse repeated lines with a count suffix', () => {
@@ -69,11 +74,7 @@ describe('trimStackTrace', () => {
   });
 
   it('should not modify a short stack trace (≤4 frames)', () => {
-    const input = [
-      'Error: oops',
-      '    at foo (/app/a.js:1)',
-      '    at bar (/app/b.js:2)'
-    ];
+    const input = ['Error: oops', '    at foo (/app/a.js:1)', '    at bar (/app/b.js:2)'];
     expect(trimStackTrace(input)).toEqual(input);
   });
 
@@ -104,10 +105,7 @@ describe('preprocessLogs', () => {
   });
 
   it('should prepend first-error comment when timestamp found', () => {
-    const raw = [
-      '2024-06-01T09:15:00Z INFO boot',
-      '2024-06-01T09:15:05Z ERROR failed to connect'
-    ].join('\n');
+    const raw = ['2024-06-01T09:15:00Z INFO boot', '2024-06-01T09:15:05Z ERROR failed to connect'].join('\n');
 
     const result = preprocessLogs(raw);
     expect(result).toContain('<!-- first-error: 2024-06-01T09:15:05Z -->');

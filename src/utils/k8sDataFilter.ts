@@ -100,7 +100,12 @@ function extractOwnerReferences(pod: any): OwnerReference[] | undefined {
   }));
 }
 
-function getPodIdentity(pod: any): { name: string; namespace: string; status: string; labels?: Record<string, string> } {
+function getPodIdentity(pod: any): {
+  name: string;
+  namespace: string;
+  status: string;
+  labels?: Record<string, string>;
+} {
   return {
     name: pod.metadata?.name || '',
     namespace: pod.metadata?.namespace || 'default',
@@ -149,6 +154,14 @@ export function filterNodeData(node: any): FilteredNode {
   };
 }
 
+function buildInvolvedObject(involvedObject: any): FilteredEvent['involvedObject'] {
+  return {
+    kind: involvedObject?.kind,
+    name: involvedObject?.name,
+    ...(involvedObject?.namespace && { namespace: involvedObject.namespace })
+  };
+}
+
 export function filterEventData(event: any, options: FilterOptions = {}): FilteredEvent | null {
   // If onlyWarnings is set, check if this is a Warning event
   if (options.onlyWarnings && event.type !== 'Warning') {
@@ -162,10 +175,6 @@ export function filterEventData(event: any, options: FilterOptions = {}): Filter
     ...(event.count && { count: event.count }),
     ...(event.firstTimestamp && { firstTimestamp: event.firstTimestamp }),
     ...(event.lastTimestamp && { lastTimestamp: event.lastTimestamp }),
-    involvedObject: {
-      kind: event.involvedObject?.kind,
-      name: event.involvedObject?.name,
-      ...(event.involvedObject?.namespace && { namespace: event.involvedObject.namespace })
-    }
+    involvedObject: buildInvolvedObject(event.involvedObject)
   };
 }

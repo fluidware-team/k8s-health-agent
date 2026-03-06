@@ -7,6 +7,7 @@ import { correlatePodTimestamps } from '../../utils/timestampCorrelator';
 import { readPodLogsTool, getPodMetricsTool } from '../../tools/deepDiveTools';
 import { listEventsTool } from '../../tools/triageTools';
 import type { DiagnosticStateType } from '../state';
+import type { TriageIssue } from '../../types/triage';
 
 const logger = getLogger();
 
@@ -49,86 +50,110 @@ function getMaxIterations(): number {
   return isNaN(parsed) || parsed < 0 ? DEFAULT_MAX_ITERATIONS : parsed;
 }
 
+// Group triage issues by owner workload key (e.g. "Deployment/name" or "Pod/name")
+function groupIssuesByOwner(issues: TriageIssue[]): Map<string, TriageIssue[]> {
+  const groups = new Map<string, TriageIssue[]>();
+  for (const issue of issues) {
+    const key = issue.ownerKind && issue.ownerName ? `${issue.ownerKind}/${issue.ownerName}` : `Pod/${issue.podName}`;
+    const group = groups.get(key);
+    if (group) {
+      group.push(issue);
+    } else {
+      groups.set(key, [issue]);
+    }
+  }
+  return groups;
+}
+
+// Include node status when degraded — helps correlate pod OOMKills with node memory pressure
+function buildNodeStatusLines(triageResult: DiagnosticStateType['triageResult']): string[] {
+  if (triageResult && triageResult.nodeStatus !== 'healthy') {
+    return [`Node status: ${triageResult.nodeStatus}`, ''];
+  }
+  return [''];
+}
+
+// Triage issues — grouped by owner workload when available
+function buildIssuesSection(triageResult: DiagnosticStateType['triageResult']): string[] {
+  if (!triageResult || triageResult.issues.length === 0) return [];
+
+  const lines: string[] = ['## Issues Found'];
+  const groups = groupIssuesByOwner(triageResult.issues);
+  for (const [workload, issues] of groups) {
+    const reasons = [...new Set(issues.map(i => i.reason))].join(', ');
+    const maxRestarts = Math.max(...issues.map(i => i.restarts ?? 0));
+    const restarts = maxRestarts > 0 ? ` (max restarts: ${maxRestarts})` : '';
+    const pods = issues.map(i => i.podName).join(', ');
+    const severity = issues[0]!.severity;
+    lines.push(`- [${severity}] ${workload}: ${reasons} (pods: ${pods})${restarts}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+// Cross-pod timestamp correlation
+function buildCorrelationsSection(triageResult: DiagnosticStateType['triageResult']): string[] {
+  if (!triageResult || triageResult.issues.length <= 1 || triageResult.eventsSummary.length === 0) return [];
+
+  const correlationNotes = correlatePodTimestamps(triageResult.issues, triageResult.eventsSummary);
+  if (correlationNotes.length === 0) return [];
+
+  const lines: string[] = ['## Timing Correlations'];
+  for (const n of correlationNotes) {
+    lines.push(`- ${n.workload}: ${n.note}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+// Namespace ResourceQuota and LimitRange constraints
+function buildConstraintsSection(namespaceConstraints: DiagnosticStateType['namespaceConstraints']): string[] {
+  if (!namespaceConstraints) return [];
+
+  const { resourceQuotas, limitRanges } = namespaceConstraints;
+  if (resourceQuotas.length === 0 && limitRanges.length === 0) return [];
+
+  const lines: string[] = ['## Namespace Constraints'];
+  for (const rq of resourceQuotas) {
+    lines.push(`- ResourceQuota/${rq.name}: hard=${JSON.stringify(rq.hard)}, used=${JSON.stringify(rq.used)}`);
+  }
+  for (const lr of limitRanges) {
+    lines.push(`- LimitRange/${lr.name}: ${JSON.stringify(lr.limits)}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+// Service dependency hints
+function buildDependencySection(dependencyHints: DiagnosticStateType['dependencyHints']): string[] {
+  if (dependencyHints.length === 0) return [];
+
+  const lines: string[] = ['## Dependency Hints'];
+  for (const h of dependencyHints) {
+    lines.push(`- ${h.workload}: ${h.hint}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+// Deep-dive findings (logs and metrics)
+function buildDeepDiveSection(deepDiveFindings: DiagnosticStateType['deepDiveFindings']): string[] {
+  if (deepDiveFindings.length === 0) return [];
+  return ['## Deep-Dive Findings', deepDiveFindings.join('\n---\n')];
+}
+
 // Build a concise prompt with triage results and deep-dive findings
 function buildAnalysisPrompt(state: DiagnosticStateType): string {
   const { namespace, triageResult, deepDiveFindings, namespaceConstraints, dependencyHints } = state;
   const lines: string[] = [];
 
   lines.push(`Namespace: ${namespace}`);
-
-  // Include node status when degraded — helps correlate pod OOMKills with node memory pressure
-  if (triageResult && triageResult.nodeStatus !== 'healthy') {
-    lines.push(`Node status: ${triageResult.nodeStatus}`);
-  }
-  lines.push('');
-
-  // Triage issues — grouped by owner workload when available
-  if (triageResult && triageResult.issues.length > 0) {
-    lines.push('## Issues Found');
-
-    const groups = new Map<string, typeof triageResult.issues>();
-    for (const issue of triageResult.issues) {
-      const key = issue.ownerKind && issue.ownerName ? `${issue.ownerKind}/${issue.ownerName}` : `Pod/${issue.podName}`;
-      const group = groups.get(key);
-      if (group) {
-        group.push(issue);
-      } else {
-        groups.set(key, [issue]);
-      }
-    }
-
-    for (const [workload, issues] of groups) {
-      const reasons = [...new Set(issues.map(i => i.reason))].join(', ');
-      const maxRestarts = Math.max(...issues.map(i => i.restarts ?? 0));
-      const restarts = maxRestarts > 0 ? ` (max restarts: ${maxRestarts})` : '';
-      const pods = issues.map(i => i.podName).join(', ');
-      const severity = issues[0]!.severity;
-      lines.push(`- [${severity}] ${workload}: ${reasons} (pods: ${pods})${restarts}`);
-    }
-    lines.push('');
-  }
-
-  // Cross-pod timestamp correlation
-  if (triageResult && triageResult.issues.length > 1 && triageResult.eventsSummary.length > 0) {
-    const correlationNotes = correlatePodTimestamps(triageResult.issues, triageResult.eventsSummary);
-    if (correlationNotes.length > 0) {
-      lines.push('## Timing Correlations');
-      for (const n of correlationNotes) {
-        lines.push(`- ${n.workload}: ${n.note}`);
-      }
-      lines.push('');
-    }
-  }
-
-  // Namespace ResourceQuota and LimitRange constraints
-  if (namespaceConstraints) {
-    const { resourceQuotas, limitRanges } = namespaceConstraints;
-    if (resourceQuotas.length > 0 || limitRanges.length > 0) {
-      lines.push('## Namespace Constraints');
-      for (const rq of resourceQuotas) {
-        lines.push(`- ResourceQuota/${rq.name}: hard=${JSON.stringify(rq.hard)}, used=${JSON.stringify(rq.used)}`);
-      }
-      for (const lr of limitRanges) {
-        lines.push(`- LimitRange/${lr.name}: ${JSON.stringify(lr.limits)}`);
-      }
-      lines.push('');
-    }
-  }
-
-  // Service dependency hints
-  if (dependencyHints.length > 0) {
-    lines.push('## Dependency Hints');
-    for (const h of dependencyHints) {
-      lines.push(`- ${h.workload}: ${h.hint}`);
-    }
-    lines.push('');
-  }
-
-  // Deep-dive findings (logs and metrics)
-  if (deepDiveFindings.length > 0) {
-    lines.push('## Deep-Dive Findings');
-    lines.push(deepDiveFindings.join('\n---\n'));
-  }
+  lines.push(...buildNodeStatusLines(triageResult));
+  lines.push(...buildIssuesSection(triageResult));
+  lines.push(...buildCorrelationsSection(triageResult));
+  lines.push(...buildConstraintsSection(namespaceConstraints));
+  lines.push(...buildDependencySection(dependencyHints));
+  lines.push(...buildDeepDiveSection(deepDiveFindings));
 
   return lines.join('\n');
 }
@@ -149,10 +174,7 @@ Be terse. Format per group:
 - Ambiguous: ...`;
 
 async function runEvidenceSummary(prompt: string): Promise<string> {
-  const response = await getChatModel().invoke([
-    new SystemMessage(EVIDENCE_SUMMARY_PROMPT),
-    new HumanMessage(prompt)
-  ]);
+  const response = await getChatModel().invoke([new SystemMessage(EVIDENCE_SUMMARY_PROMPT), new HumanMessage(prompt)]);
   return extractContent(response);
 }
 
@@ -165,9 +187,7 @@ async function runWithReactAgent(prompt: string, maxIterations: number, evidence
 
   // Each iteration = agent node + tools node = 2 steps; +1 for the final answer step
   const recursionLimit = maxIterations * 2 + 1;
-  const promptContent = evidenceSummary
-    ? `${prompt}\n\n## Evidence Summary (Stage 1)\n${evidenceSummary}`
-    : prompt;
+  const promptContent = evidenceSummary ? `${prompt}\n\n## Evidence Summary (Stage 1)\n${evidenceSummary}` : prompt;
 
   const result = await agent.invoke({ messages: [new HumanMessage(promptContent)] }, { recursionLimit });
 
@@ -190,13 +210,8 @@ async function runTwoStageAnalysis(prompt: string, maxIterations: number): Promi
 }
 
 async function runWithSingleInvoke(prompt: string, extraContext?: string): Promise<string> {
-  const promptContent = extraContext
-    ? `${prompt}\n\n## Evidence Summary (Stage 1)\n${extraContext}`
-    : prompt;
-  const response = await getChatModel().invoke([
-    new SystemMessage(SYSTEM_PROMPT),
-    new HumanMessage(promptContent)
-  ]);
+  const promptContent = extraContext ? `${prompt}\n\n## Evidence Summary (Stage 1)\n${extraContext}` : prompt;
+  const response = await getChatModel().invoke([new SystemMessage(SYSTEM_PROMPT), new HumanMessage(promptContent)]);
   return extractContent(response);
 }
 
