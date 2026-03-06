@@ -334,7 +334,9 @@ function applyPrefix(items: any[], namePrefix?: string): any[] {
 // Useful for verifying that a referenced config or secret actually exists.
 export const listConfigsAndSecretsTool = tool(
   async ({ namespace, namePrefix }) => {
-    getLogger().info(`[tool] list_configmaps_and_secrets in ${namespace}${namePrefix ? ` (prefix: ${namePrefix})` : ''}`);
+    getLogger().info(
+      `[tool] list_configmaps_and_secrets in ${namespace}${namePrefix ? ` (prefix: ${namePrefix})` : ''}`
+    );
     try {
       const [cmRes, secretRes] = await Promise.all([
         k8sCoreApi.listNamespacedConfigMap({ namespace }),

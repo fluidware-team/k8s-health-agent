@@ -10,12 +10,9 @@ export interface CorrelationNote {
 const CORRELATION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * For each owner workload with multiple failing pods, check whether their first-error
- * timestamps (from events) fall within a narrow window. If so, emit a correlation note.
- * Single-pod workloads and workloads with missing/unparseable timestamps are skipped.
+ * Build a map from pod name → earliest event timestamp.
  */
-export function correlatePodTimestamps(issues: TriageIssue[], events: FilteredEvent[]): CorrelationNote[] {
-  // Build a map from pod name → first event timestamp
+function buildPodTimestampMap(events: FilteredEvent[]): Map<string, Date> {
   const podFirstTs = new Map<string, Date>();
   for (const event of events) {
     const podName = event.involvedObject.name;
@@ -29,6 +26,16 @@ export function correlatePodTimestamps(issues: TriageIssue[], events: FilteredEv
       podFirstTs.set(podName, ts);
     }
   }
+  return podFirstTs;
+}
+
+/**
+ * For each owner workload with multiple failing pods, check whether their first-error
+ * timestamps (from events) fall within a narrow window. If so, emit a correlation note.
+ * Single-pod workloads and workloads with missing/unparseable timestamps are skipped.
+ */
+export function correlatePodTimestamps(issues: TriageIssue[], events: FilteredEvent[]): CorrelationNote[] {
+  const podFirstTs = buildPodTimestampMap(events);
 
   // Group issues by owner workload
   const groups = new Map<string, TriageIssue[]>();
@@ -50,9 +57,7 @@ export function correlatePodTimestamps(issues: TriageIssue[], events: FilteredEv
     if (groupIssues.length < 2) continue;
 
     // Collect timestamps for pods in this group that have events
-    const timestamps = groupIssues
-      .map(i => podFirstTs.get(i.podName))
-      .filter((ts): ts is Date => ts !== undefined);
+    const timestamps = groupIssues.map(i => podFirstTs.get(i.podName)).filter((ts): ts is Date => ts !== undefined);
 
     if (timestamps.length < 2) continue;
 

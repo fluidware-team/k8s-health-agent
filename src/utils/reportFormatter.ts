@@ -131,19 +131,19 @@ function formatTrendSection(diff: SnapshotDiff): string {
   if (diff.newIssues.length > 0) {
     lines.push('');
     lines.push(`**New (${diff.newIssues.length}):**`);
-    for (const i of diff.newIssues) lines.push(`- [${i.severity.toUpperCase()}] ${i.title}`);
+    lines.push(...diff.newIssues.map(i => `- [${i.severity.toUpperCase()}] ${i.title}`));
   }
 
   if (diff.worsenedIssues.length > 0) {
     lines.push('');
     lines.push(`**Worsened (${diff.worsenedIssues.length}):**`);
-    for (const i of diff.worsenedIssues) lines.push(`- [${i.severity.toUpperCase()}] ${i.title}`);
+    lines.push(...diff.worsenedIssues.map(i => `- [${i.severity.toUpperCase()}] ${i.title}`));
   }
 
   if (diff.resolvedIssues.length > 0) {
     lines.push('');
     lines.push(`**Resolved (${diff.resolvedIssues.length}):**`);
-    for (const i of diff.resolvedIssues) lines.push(`- ${i.title}`);
+    lines.push(...diff.resolvedIssues.map(i => `- ${i.title}`));
   }
 
   const noChanges = diff.newIssues.length === 0 && diff.worsenedIssues.length === 0 && diff.resolvedIssues.length === 0;

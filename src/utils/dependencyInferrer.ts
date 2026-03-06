@@ -25,6 +25,31 @@ function countReadyAddresses(endpoints: any): number {
 }
 
 /**
+ * Returns a DependencyHint if the service has 0 ready endpoints and a failing pod matches
+ * its selector, otherwise null.
+ */
+function buildServiceHint(
+  svc: any,
+  endpointsMap: Map<string, number>,
+  failingPods: FailingPodInfo[]
+): DependencyHint | null {
+  const selector: Record<string, string> = svc.spec?.selector ?? {};
+  if (Object.keys(selector).length === 0) return null; // headless / selector-less services
+
+  const svcName = svc.metadata?.name ?? '';
+  const readyCount = endpointsMap.get(svcName) ?? 0;
+  if (readyCount > 0) return null; // service is healthy
+
+  const matchingPod = failingPods.find(p => selectorMatches(selector, p.labels));
+  if (!matchingPod) return null;
+
+  return {
+    workload: `Service/${svcName} (pod: ${matchingPod.name})`,
+    hint: `Service/${svcName} has 0 ready endpoints — its backing pods are failing. Other workloads relying on this service may be affected downstream.`
+  };
+}
+
+/**
  * Infer service dependency hints for failing pods by cross-referencing:
  * - Services whose label selector matches a failing pod's labels
  * - Whether those services have 0 ready endpoints
@@ -48,23 +73,9 @@ export async function inferDependencies(namespace: string, failingPods: FailingP
     );
 
     const hints: DependencyHint[] = [];
-
     for (const svc of services) {
-      const selector: Record<string, string> = svc.spec?.selector ?? {};
-      if (Object.keys(selector).length === 0) continue; // headless / selector-less services
-
-      const svcName = svc.metadata?.name ?? '';
-      const readyCount = endpointsMap.get(svcName) ?? 0;
-      if (readyCount > 0) continue; // service is healthy
-
-      // Check if any failing pod matches this service's selector
-      const matchingPod = failingPods.find(p => selectorMatches(selector, p.labels));
-      if (!matchingPod) continue;
-
-      hints.push({
-        workload: `Service/${svcName} (pod: ${matchingPod.name})`,
-        hint: `Service/${svcName} has 0 ready endpoints — its backing pods are failing. Other workloads relying on this service may be affected downstream.`
-      });
+      const hint = buildServiceHint(svc, endpointsMap, failingPods);
+      if (hint) hints.push(hint);
     }
 
     return hints;

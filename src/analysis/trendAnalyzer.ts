@@ -59,7 +59,11 @@ export function diffSnapshots(previous: DiagnosticReport, current: DiagnosticRep
   // New or worsened: in current
   for (const [key, curr] of currMap) {
     const prev = prevMap.get(key);
-    const diff = { title: curr.title, resource: `${curr.resource.kind}/${curr.resource.name}`, severity: curr.severity };
+    const diff = {
+      title: curr.title,
+      resource: `${curr.resource.kind}/${curr.resource.name}`,
+      severity: curr.severity
+    };
     if (!prev) {
       newIssues.push(diff);
     } else if (SEVERITY_RANK[curr.severity] > SEVERITY_RANK[prev.severity]) {
@@ -70,7 +74,11 @@ export function diffSnapshots(previous: DiagnosticReport, current: DiagnosticRep
   // Resolved: in previous but not current
   for (const [key, prev] of prevMap) {
     if (!currMap.has(key)) {
-      resolvedIssues.push({ title: prev.title, resource: `${prev.resource.kind}/${prev.resource.name}`, severity: prev.severity });
+      resolvedIssues.push({
+        title: prev.title,
+        resource: `${prev.resource.kind}/${prev.resource.name}`,
+        severity: prev.severity
+      });
     }
   }
 
